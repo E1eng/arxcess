@@ -1,5 +1,16 @@
 import { DeliveryKeypair } from "@/lib/crypto/delivery";
 
+export interface SellerDeliveryMaterial {
+  contentKeyBase64: string;
+  ivBase64: string;
+}
+
+export interface ListingAccessPolicy {
+  licenseDurationSeconds: number;
+  maxAccessCount: number;
+  revocable: boolean;
+}
+
 export interface LocalProductListing {
   productIdHex: string;
   title: string;
@@ -14,7 +25,9 @@ export interface LocalProductListing {
   mimeType: string;
   fileSizeBytes: number;
   sellerWallet: string | null;
+  policy: ListingAccessPolicy;
   createdAt: string;
+  publishSignature?: string;
 }
 
 export interface LocalPurchaseIntent {
@@ -23,13 +36,22 @@ export interface LocalPurchaseIntent {
   buyerWallet: string | null;
   buyerDeliveryPublicKeyBase64: string;
   amountSol: string;
-  status: "prepared" | "pending_seal";
+  status: "prepared" | "pending_seal" | "delivered" | "revoked";
+  accessCount: number;
+  maxAccessCount: number;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
   createdAt: string;
+  transactionSignature?: string;
+  finalizeSignature?: string;
+  sealedKeyBoxBase64?: string;
+  deliveryCommitmentHex?: string;
 }
 
 const PRODUCT_STORAGE_KEY = "arxcess.products";
 const PURCHASE_STORAGE_KEY = "arxcess.purchases";
 const DELIVERY_KEY_STORAGE_KEY = "arxcess.delivery-keypair";
+const SELLER_DELIVERY_STORAGE_KEY = "arxcess.seller-delivery-material";
 
 function readJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") {
@@ -73,4 +95,17 @@ export function getStoredDeliveryKeypair(): DeliveryKeypair | null {
 
 export function saveStoredDeliveryKeypair(keypair: DeliveryKeypair) {
   writeJson(DELIVERY_KEY_STORAGE_KEY, keypair);
+}
+
+export function getStoredSellerDeliveryMaterial(productIdHex: string): SellerDeliveryMaterial | null {
+  const materials = readJson<Record<string, SellerDeliveryMaterial>>(SELLER_DELIVERY_STORAGE_KEY, {});
+  return materials[productIdHex] ?? null;
+}
+
+export function saveStoredSellerDeliveryMaterial(productIdHex: string, material: SellerDeliveryMaterial) {
+  const materials = readJson<Record<string, SellerDeliveryMaterial>>(SELLER_DELIVERY_STORAGE_KEY, {});
+  writeJson(SELLER_DELIVERY_STORAGE_KEY, {
+    ...materials,
+    [productIdHex]: material
+  });
 }

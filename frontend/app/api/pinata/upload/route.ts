@@ -9,7 +9,14 @@ export async function POST(request: Request) {
     return new NextResponse("Missing PINATA_JWT", { status: 500 });
   }
 
-  const inbound = await request.formData();
+  let inbound: FormData;
+
+  try {
+    inbound = await request.formData();
+  } catch {
+    return new NextResponse("Expected multipart form data", { status: 400 });
+  }
+
   const file = inbound.get("file");
 
   if (!(file instanceof File)) {

@@ -66,6 +66,13 @@ pub fn handler(ctx: Context<PurchaseProduct>, purchase_id: [u8; 32], buyer_deliv
     )?;
 
     let now = Clock::get()?.unix_timestamp;
+    let expires_at = if product_state.license_duration_seconds == 0 {
+        0
+    } else {
+        now.checked_add(product_state.license_duration_seconds)
+            .ok_or_else(|| error!(ArxcessError::MathOverflow))?
+    };
+
     ctx.accounts.purchase_state.initialize(
         ctx.bumps.purchase_state,
         purchase_id,
@@ -76,6 +83,8 @@ pub fn handler(ctx: Context<PurchaseProduct>, purchase_id: [u8; 32], buyer_deliv
         protocol_fee_lamports,
         seller_proceeds_lamports,
         &product_state.ciphertext_cid,
+        expires_at,
+        product_state.max_access_count,
         now
     )?;
 

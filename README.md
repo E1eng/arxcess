@@ -86,8 +86,11 @@ Example values live in `.env.example`:
 
 ```env
 NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
-NEXT_PUBLIC_PROGRAM_ID=
+NEXT_PUBLIC_PROGRAM_ID=sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk
+NEXT_PUBLIC_TREASURY_WALLET=
 PINATA_JWT=
+NEXT_PUBLIC_SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 For local frontend development, create:
@@ -100,15 +103,28 @@ Recommended local setup:
 
 ```env
 NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
-NEXT_PUBLIC_PROGRAM_ID=your_program_id
+NEXT_PUBLIC_PROGRAM_ID=sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk
+NEXT_PUBLIC_TREASURY_WALLET=your_devnet_treasury_wallet
 PINATA_JWT=your_pinata_jwt
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 ### Notes
 
 - `NEXT_PUBLIC_SOLANA_RPC_URL` sets the client RPC endpoint.
 - `NEXT_PUBLIC_PROGRAM_ID` is required for program-aware flows.
+- `NEXT_PUBLIC_TREASURY_WALLET` is required for on-chain `create_product` and `purchase_product` flows so protocol fees have a valid destination.
 - `PINATA_JWT` is required for upload flows that send encrypted files and metadata to Pinata.
+- `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` enable shared marketplace listings across browsers via `frontend/app/api/listings/route.ts`.
+
+To enable shared listings, create the table in Supabase by running:
+
+```sql
+-- see supabase/marketplace_listings.sql
+```
+
+Then apply the SQL from `supabase/marketplace_listings.sql` in the Supabase SQL editor.
 
 Do not commit local env files.
 
@@ -126,22 +142,18 @@ The seller workbench:
 - encrypts the chosen file in the browser
 - uploads ciphertext to Pinata/IPFS
 - uploads metadata JSON
-- stores the resulting listing locally in browser storage
+- asks the wallet to sign a Devnet publish transaction that creates, deposits, and activates the product on-chain
+- stores the resulting listing locally and optionally in Supabase
 
-### Products
+### Products / Catalog
 
-The catalog page:
-
-- reads locally stored listings
-- shows metadata and ciphertext links
+The product catalog reads the stored listings and presents a storefront-style checkout preview. Buying now sends the on-chain `purchase_product` transaction from the connected wallet.
 - prepares buyer purchase payloads
 - stores prepared purchase intents locally
 
 ### Purchases
 
-The purchases page:
-
-- creates a buyer delivery keypair in browser storage
+The purchases page is a buyer-side library/reveal hub placeholder backed by local browser state. After the purchase transaction succeeds, entries move into `pending_seal` until delivery finalization is implemented.
 - lists prepared purchase intents
 - shows the next payloads for future on-chain integration
 

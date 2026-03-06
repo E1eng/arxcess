@@ -40,3 +40,17 @@ pub struct DeliveryFinalized {
     pub approval_flag: u8,
     pub sealed_key_len: u16
 }
+
+#[event]
+pub struct AccessConsumed {
+    pub purchase: Pubkey,
+    pub buyer: Pubkey,
+    pub access_count: u32
+}
+
+#[event]
+pub struct PurchaseRevoked {
+    pub purchase: Pubkey,
+    pub authority: Pubkey,
+    pub revoked_at: i64
+}

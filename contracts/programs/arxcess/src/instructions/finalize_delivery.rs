@@ -30,6 +30,8 @@ pub fn handler(
     let purchase_state = &mut ctx.accounts.purchase_state;
     require!(purchase_state.status == PURCHASE_STATUS_PENDING_SEAL, ArxcessError::InvalidPurchaseStatus);
     require!(sealed_key_box.len() <= SEALED_KEY_BOX_BYTES, ArxcessError::InvalidDeliveryPayload);
+    require!(!purchase_state.is_revoked(), ArxcessError::AccessRevoked);
+    require!(!purchase_state.is_expired(Clock::get()?.unix_timestamp), ArxcessError::AccessExpired);
 
     purchase_state.entitlement_flag = approval_flag;
     purchase_state.sealed_key_len = sealed_key_box.len() as u16;

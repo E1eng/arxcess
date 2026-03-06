@@ -9,7 +9,7 @@ pub mod utils;
 
 use instructions::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWxTWqkZK6W2BeZ7FEfcYkgmqPae");
+declare_id!("sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk");
 
 #[program]
 pub mod arxcess {
@@ -23,7 +23,10 @@ pub mod arxcess {
         ciphertext_hash: [u8; 32],
         price_lamports: u64,
         protocol_fee_bps: u16,
-        file_size_bytes: u64
+        file_size_bytes: u64,
+        license_duration_seconds: i64,
+        max_access_count: u32,
+        revocable: bool
     ) -> Result<()> {
         create_product::handler(
             ctx,
@@ -33,7 +36,10 @@ pub mod arxcess {
             ciphertext_hash,
             price_lamports,
             protocol_fee_bps,
-            file_size_bytes
+            file_size_bytes,
+            license_duration_seconds,
+            max_access_count,
+            revocable
         )
     }
 
@@ -64,5 +70,13 @@ pub mod arxcess {
         delivery_commitment: [u8; 32]
     ) -> Result<()> {
         finalize_delivery::handler(ctx, approval_flag, sealed_key_box, delivery_commitment)
+    }
+
+    pub fn consume_access(ctx: Context<ConsumeAccess>) -> Result<()> {
+        consume_access::handler(ctx)
+    }
+
+    pub fn revoke_purchase(ctx: Context<RevokePurchase>) -> Result<()> {
+        revoke_purchase::handler(ctx)
     }
 }

@@ -19,5 +19,17 @@ pub enum ArxcessError {
     #[msg("Invalid delivery payload")]
     InvalidDeliveryPayload,
     #[msg("Math overflow")]
-    MathOverflow
+    MathOverflow,
+    #[msg("Invalid access policy")]
+    InvalidAccessPolicy,
+    #[msg("Access entitlement has expired")]
+    AccessExpired,
+    #[msg("Access entitlement has been revoked")]
+    AccessRevoked,
+    #[msg("Access quota has been exhausted")]
+    AccessExhausted,
+    #[msg("This product is not revocable")]
+    ProductNotRevocable,
+    #[msg("Delivery approval was denied")]
+    DeliveryNotApproved
 }

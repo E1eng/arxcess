@@ -29,7 +29,10 @@ pub fn handler(
     ciphertext_hash: [u8; 32],
     price_lamports: u64,
     protocol_fee_bps: u16,
-    file_size_bytes: u64
+    file_size_bytes: u64,
+    license_duration_seconds: i64,
+    max_access_count: u32,
+    revocable: bool
 ) -> Result<()> {
     require!(price_lamports > 0, ArxcessError::InvalidPrice);
     require!(protocol_fee_bps <= 10_000, ArxcessError::InvalidProtocolFeeBps);
@@ -46,6 +49,9 @@ pub fn handler(
         price_lamports,
         protocol_fee_bps,
         file_size_bytes,
+        license_duration_seconds,
+        max_access_count,
+        revocable,
         now
     )?;
 

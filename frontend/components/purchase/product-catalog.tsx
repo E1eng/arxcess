@@ -1,39 +1,162 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useEffect, useMemo, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId } from "@arxcess/sdk";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { useProducts } from "@/hooks/use-products";
-import { saveStoredPurchase } from "@/lib/storage/marketplace";
+import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
+import { fetchOnchainProductStates, type DecodedProductState } from "@/lib/solana/account-state";
+import { buildPurchaseTransaction } from "@/lib/solana/arxcess";
+import { type LocalProductListing, type LocalPurchaseIntent, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { solToLamports } from "@/lib/solana/amounts";
 
+function truncateValue(value: string, head = 12, tail = 6) {
+  if (value.length <= head + tail + 3) {
+    return value;
+  }
+
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function ProductCatalog() {
-  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
   const { products } = useProducts();
   const { ensureKeypair } = useDeliveryKeys();
-  const [prepared, setPrepared] = useState<Record<string, unknown> | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<LocalProductListing | null>(null);
+  const [busyProductId, setBusyProductId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
+  const [prepared, setPrepared] = useState<
+    | {
+        product: LocalProductListing;
+        purchase: LocalPurchaseIntent;
+        amountLamports: string;
+      }
+    | null
+  >(null);
   const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  function preparePurchase(productIdHex: string, amountSol: string) {
-    const deliveryKeypair = ensureKeypair();
-    const purchaseIdHex = randomHexId();
-    saveStoredPurchase({
-      purchaseIdHex,
-      productIdHex,
-      buyerWallet,
-      buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64,
-      amountSol,
-      status: "prepared",
-      createdAt: new Date().toISOString()
-    });
-    setPrepared({
-      purchaseIdHex,
-      productIdHex,
-      buyerWallet,
-      buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64,
-      amountLamports: solToLamports(amountSol).toString()
-    });
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadOnchainStates() {
+      const resolvable = products.filter((product) => Boolean(product.sellerWallet));
+
+      if (resolvable.length === 0) {
+        if (!ignore) {
+          setOnchainProductStates({});
+        }
+        return;
+      }
+
+      try {
+        const states = await fetchOnchainProductStates(connection, resolvable);
+        if (!ignore) {
+          setOnchainProductStates(states);
+        }
+      } catch {
+        if (!ignore) {
+          setOnchainProductStates({});
+        }
+      }
+    }
+
+    void loadOnchainStates();
+
+    return () => {
+      ignore = true;
+    };
+  }, [connection, products]);
+
+  async function preparePurchase(product: LocalProductListing) {
+    if (!publicKey || !sendTransaction) {
+      setError("Connect a wallet before buying on-chain.");
+      return;
+    }
+
+    if (!hasConfiguredProgramId()) {
+      setError("Missing NEXT_PUBLIC_PROGRAM_ID.");
+      return;
+    }
+
+    if (!hasConfiguredTreasuryPublicKey()) {
+      setError("Missing NEXT_PUBLIC_TREASURY_WALLET.");
+      return;
+    }
+
+    setBusyProductId(product.productIdHex);
+    setError(null);
+
+    try {
+      const deliveryKeypair = ensureKeypair();
+      const purchaseIdHex = randomHexId();
+      const { transaction } = await buildPurchaseTransaction({
+        buyer: publicKey,
+        listing: product,
+        purchaseIdHex,
+        buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64
+      });
+      const latestBlockhash = await connection.getLatestBlockhash();
+
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+
+      const transactionSignature = await sendTransaction(transaction, connection);
+
+      await connection.confirmTransaction(
+        {
+          signature: transactionSignature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+        },
+        "confirmed"
+      );
+
+      const createdAt = new Date();
+      const expiresAt =
+        product.policy.licenseDurationSeconds === 0
+          ? null
+          : new Date(createdAt.getTime() + product.policy.licenseDurationSeconds * 1000).toISOString();
+      const purchase: LocalPurchaseIntent = {
+        purchaseIdHex,
+        productIdHex: product.productIdHex,
+        buyerWallet,
+        buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64,
+        amountSol: product.priceSol,
+        status: "pending_seal",
+        accessCount: 0,
+        maxAccessCount: product.policy.maxAccessCount,
+        expiresAt,
+        revokedAt: null,
+        createdAt: createdAt.toISOString(),
+        transactionSignature
+      };
+
+      saveStoredPurchase(purchase);
+      setPrepared({
+        product,
+        purchase,
+        amountLamports: solToLamports(product.priceSol).toString()
+      });
+      setSelectedProduct(product);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to execute on-chain purchase.");
+    } finally {
+      setBusyProductId(null);
+    }
   }
 
   return (
@@ -41,9 +164,10 @@ export function ProductCatalog() {
       <div className="card">
         <div>
           <h2 className="section-title">Catalog</h2>
-          <p className="muted">These listings are your current browser-side marketplace state while on-chain integration is being wired.</p>
+          <p className="muted">Browse locked products like a storefront. The buyer should feel a checkout flow first, then an unlock flow after payment and sealed delivery.</p>
         </div>
         <span className="badge">Buyer wallet: {buyerWallet ?? "not connected"}</span>
+        {error ? <span className="badge">{error}</span> : null}
       </div>
       {products.length === 0 ? (
         <div className="card">
@@ -51,41 +175,206 @@ export function ProductCatalog() {
           <span className="muted">Create one from the seller page after configuring Pinata.</span>
         </div>
       ) : (
-        products.map((product) => (
-          <div key={product.productIdHex} className="card">
-            <div className="row">
-              <span className="badge">{product.category}</span>
-              <span className="badge">{product.priceSol} SOL</span>
-            </div>
-            <div>
-              <h3>{product.title}</h3>
-              <p className="muted">{product.description}</p>
-            </div>
-            <div className="grid grid-2">
-              <div className="kpi">
-                <span className="muted">Ciphertext CID</span>
-                <strong>{product.ciphertextCid.slice(0, 16)}...</strong>
+        <div className="catalog-grid">
+          {products.map((product) => {
+            const isFocused = selectedProduct?.productIdHex === product.productIdHex;
+            const onchain = onchainProductStates[product.productIdHex];
+
+            return (
+              <div key={product.productIdHex} className={`card surface product-card${isFocused ? " product-card--active" : ""}`}>
+                <div className="asset-stage__media product-card__media">
+                  <div className="row">
+                    <span className="badge">{product.category}</span>
+                    <span className="badge">{onchain ? onchain.statusLabel : "Encrypted listing"}</span>
+                  </div>
+                  <strong>{product.title}</strong>
+                  <span className="muted">{product.description}</span>
+                  <span className="asset-stage__lock">Preview only. Full asset unlocks after checkout.</span>
+                </div>
+                <div className="metric-grid">
+                  <div className="kpi compact-kpi">
+                    <span className="muted">Price</span>
+                    <strong>{product.priceSol} SOL</strong>
+                  </div>
+                  <div className="kpi compact-kpi">
+                    <span className="muted">Asset size</span>
+                    <strong>{formatBytes(product.fileSizeBytes)}</strong>
+                  </div>
+                </div>
+                <div className="detail-list">
+                  <div className="detail-row">
+                    <span className="muted">Format</span>
+                    <strong>{product.mimeType}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="muted">Seller</span>
+                    <strong>{product.sellerWallet ? truncateValue(product.sellerWallet) : "not connected"}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="muted">License</span>
+                    <strong>{product.policy.licenseDurationSeconds === 0 ? "No expiry" : `${Math.floor(product.policy.licenseDurationSeconds / 86400)} days`}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="muted">Max reveals</span>
+                    <strong>{product.policy.maxAccessCount}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="muted">On-chain sales</span>
+                    <strong>{onchain?.totalSales ?? 0}</strong>
+                  </div>
+                </div>
+                <div className="row">
+                  <button className="button secondary" type="button" onClick={() => setSelectedProduct(product)}>
+                    View checkout
+                  </button>
+                  <button className="button" type="button" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex}>
+                    {busyProductId === product.productIdHex ? "Awaiting wallet confirmation..." : "Buy on-chain"}
+                  </button>
+                </div>
               </div>
-              <div className="kpi">
-                <span className="muted">Metadata CID</span>
-                <strong>{product.metadataCid.slice(0, 16)}...</strong>
+            );
+          })}
+        </div>
+      )}
+
+      {selectedProduct ? (
+        <div className="card surface">
+          <div>
+            <span className="badge">Checkout preview</span>
+            <h3 className="section-title">{selectedProduct.title}</h3>
+            <p className="muted">This is the buyer-facing step before payment: review the offer, confirm the wallet, and continue to purchase.</p>
+          </div>
+          <div className="grid">
+            <div className="asset-stage">
+              <div className="asset-stage__media">
+                <span className="badge">Locked content</span>
+                <strong>{selectedProduct.title}</strong>
+                <span className="muted">{selectedProduct.description}</span>
+                <span className="asset-stage__lock">After payment, buyer receives a sealed delivery key and can reveal the asset.</span>
+              </div>
+              <div className="row">
+                <a className="button secondary" href={selectedProduct.metadataGatewayUrl} target="_blank" rel="noreferrer">
+                  View metadata
+                </a>
+                <a className="button secondary" href={selectedProduct.ciphertextGatewayUrl} target="_blank" rel="noreferrer">
+                  View encrypted file
+                </a>
               </div>
             </div>
-            <div className="row">
-              <a className="button secondary" href={product.metadataGatewayUrl} target="_blank" rel="noreferrer">
-                Open metadata
-              </a>
-              <a className="button secondary" href={product.ciphertextGatewayUrl} target="_blank" rel="noreferrer">
-                Open ciphertext
-              </a>
-              <button className="button" type="button" onClick={() => preparePurchase(product.productIdHex, product.priceSol)}>
-                Prepare purchase payload
-              </button>
+            <div className="detail-list">
+              <div className="detail-row">
+                <span className="muted">Price</span>
+                <strong>{selectedProduct.priceSol} SOL</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Network</span>
+                <strong>Solana Devnet</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Buyer wallet</span>
+                <strong>{buyerWallet ? truncateValue(buyerWallet) : "Connect wallet first"}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Revocable</span>
+                <strong>{selectedProduct.policy.revocable ? "Yes" : "No"}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Product state</span>
+                <strong>{onchainProductStates[selectedProduct.productIdHex]?.statusLabel ?? "unknown"}</strong>
+              </div>
+            </div>
+            <div className="timeline">
+              <div className="timeline-item done">
+                <strong>1. Inspect listing</strong>
+                <span className="muted">Buyer sees the preview, price, and what unlocks after payment.</span>
+              </div>
+              <div className="timeline-item active">
+                <strong>2. Confirm checkout</strong>
+                <span className="muted">Buy on-chain opens the wallet and sends the `purchase_product` transaction.</span>
+              </div>
+              <div className="timeline-item">
+                <strong>3. Reveal asset later</strong>
+                <span className="muted">The purchases page should become the reveal hub once delivery is complete.</span>
+              </div>
             </div>
           </div>
-        ))
-      )}
-      {prepared ? <pre className="code">{JSON.stringify(prepared, null, 2)}</pre> : null}
+          {prepared && prepared.product.productIdHex === selectedProduct.productIdHex ? (
+            <div className="detail-list">
+              <div className="detail-row">
+                <span className="muted">Product</span>
+                <strong>{prepared.product.title}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Amount</span>
+                <strong>{prepared.product.priceSol} SOL</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Lamports</span>
+                <strong>{prepared.amountLamports}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Purchase ID</span>
+                <strong>{truncateValue(prepared.purchase.purchaseIdHex)}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Transaction</span>
+                <strong>{prepared.purchase.transactionSignature ? truncateValue(prepared.purchase.transactionSignature, 16, 12) : "pending"}</strong>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {prepared ? (
+        <div className="card surface accent-card">
+          <div>
+            <span className="badge">On-chain purchase sent</span>
+            <h3 className="section-title">Purchase confirmed on Devnet</h3>
+            <p className="muted">Payment moved on-chain and the purchase is now waiting for sealed delivery finalization.</p>
+          </div>
+          <div className="grid grid-2 marketplace-split">
+            <div className="detail-list">
+              <div className="detail-row">
+                <span className="muted">Product</span>
+                <strong>{prepared.product.title}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Amount</span>
+                <strong>{prepared.product.priceSol} SOL</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Lamports</span>
+                <strong>{prepared.amountLamports}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Purchase ID</span>
+                <strong>{truncateValue(prepared.purchase.purchaseIdHex)}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Transaction</span>
+                <strong>{prepared.purchase.transactionSignature ? truncateValue(prepared.purchase.transactionSignature, 16, 12) : "pending"}</strong>
+              </div>
+            </div>
+            <div className="detail-list">
+              <div className="detail-row">
+                <span className="muted">Buyer</span>
+                <strong>{prepared.purchase.buyerWallet ? truncateValue(prepared.purchase.buyerWallet) : "not connected"}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Delivery key</span>
+                <strong>{truncateValue(prepared.purchase.buyerDeliveryPublicKeyBase64)}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Status</span>
+                <strong>Pending sealed delivery</strong>
+              </div>
+              <div className="detail-row">
+                <span className="muted">Next screen</span>
+                <strong>Delivery finalization → reveal</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

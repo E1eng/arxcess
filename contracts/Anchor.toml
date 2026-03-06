@@ -2,12 +2,18 @@
 resolution = true
 skip-lint = false
 
+[toolchain]
+anchor_version = "0.30.1"
+
 [programs.localnet]
-arxcess = "Fg6PaFpoGXkYsidMpWxTWqkZK6W2BeZ7FEfcYkgmqPae"
+arxcess = "sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk"
 
 [provider]
-cluster = "Localnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
+
+[programs.devnet]
+arxcess = "sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk"
 
 [scripts]
 test = "anchor test"

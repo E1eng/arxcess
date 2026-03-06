@@ -1,0 +1,16 @@
+pub const PRODUCT_STATUS_DRAFT: u8 = 0;
+pub const PRODUCT_STATUS_ACTIVE: u8 = 1;
+pub const PRODUCT_STATUS_PAUSED: u8 = 2;
+pub const PRODUCT_STATUS_DELISTED: u8 = 3;
+
+pub const PURCHASE_STATUS_INITIALIZED: u8 = 0;
+pub const PURCHASE_STATUS_PAID: u8 = 1;
+pub const PURCHASE_STATUS_PENDING_SEAL: u8 = 2;
+pub const PURCHASE_STATUS_DELIVERED: u8 = 3;
+pub const PURCHASE_STATUS_REFUNDED: u8 = 4;
+pub const PURCHASE_STATUS_REVOKED: u8 = 5;
+
+pub const METADATA_URI_BYTES: usize = 200;
+pub const CIPHERTEXT_CID_BYTES: usize = 100;
+pub const DELIVERY_PUBKEY_BYTES: usize = 32;
+pub const SEALED_KEY_BOX_BYTES: usize = 256;

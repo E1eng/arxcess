@@ -1,0 +1,13 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+arxcess = "Fg6PaFpoGXkYsidMpWxTWqkZK6W2BeZ7FEfcYkgmqPae"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "anchor test"

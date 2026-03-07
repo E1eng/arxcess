@@ -7,14 +7,12 @@ export default function HomePage() {
       <section className="hero">
         <div className="hero-grid">
           <div className="hero-copy">
-            <span className="badge">Web-only encrypted marketplace MVP</span>
-            <h1>Sell encrypted digital goods without giving the platform your keys.</h1>
-            <p className="subtitle">
-              Arxcess encrypts files in the browser, stores only ciphertext on Pinata/IPFS, and prepares Solana + Arcium payloads for trust-minimized delivery.
-            </p>
+            <span className="badge badge--neutral">Encrypted digital commerce on Solana</span>
+            <h1>Sell locked digital products with a simple buyer and seller flow.</h1>
+            <p className="subtitle">Publish a product, buy it with a wallet, then reveal it securely after delivery is ready.</p>
             <div className="row hero-actions">
               <Link className="button" href="/seller">
-                Create listing
+                Start selling
               </Link>
               <Link className="button secondary" href="/products">
                 Browse products
@@ -24,46 +22,46 @@ export default function HomePage() {
               <div className="card compact">
                 <div className="kpi">
                   <span className="muted">Encryption</span>
-                  <strong>Client-side</strong>
+                  <strong>In browser</strong>
                 </div>
-                <span className="muted">Plaintext stays in the browser before upload.</span>
+                <span className="muted">Files are encrypted before upload.</span>
               </div>
               <div className="card compact">
                 <div className="kpi">
                   <span className="muted">Storage</span>
-                  <strong>Pinata/IPFS</strong>
+                  <strong>Pinata + IPFS</strong>
                 </div>
-                <span className="muted">Only encrypted blobs leave the browser.</span>
+                <span className="muted">Only encrypted content is uploaded.</span>
               </div>
               <div className="card compact">
                 <div className="kpi">
-                  <span className="muted">Settlement</span>
-                  <strong>Solana + Anchor</strong>
+                  <span className="muted">Payments</span>
+                  <strong>Wallet based</strong>
                 </div>
-                <span className="muted">Purchase entitlement is shaped for on-chain enforcement.</span>
+                <span className="muted">Purchases and access are enforced on-chain.</span>
               </div>
             </div>
           </div>
           <div className="hero-panel">
-            <span className="badge">Prototype workflow</span>
-            <h2 className="section-title">How it flows</h2>
+            <span className="badge">Simple flow</span>
+            <h2 className="section-title">Three steps</h2>
             <div className="grid">
               <div className="step-item">
-                <strong>1. Encrypt locally</strong>
-                <span className="muted">Choose an asset and encrypt it in the browser before upload.</span>
+                <strong>1. Publish</strong>
+                <span className="muted">Create a listing and upload the locked file.</span>
               </div>
               <div className="step-item">
-                <strong>2. Upload ciphertext</strong>
-                <span className="muted">Store ciphertext and metadata on IPFS through Pinata.</span>
+                <strong>2. Buy</strong>
+                <span className="muted">The buyer pays with a wallet.</span>
               </div>
               <div className="step-item">
-                <strong>3. Prepare delivery</strong>
-                <span className="muted">Generate buyer delivery keys and purchase payloads for later settlement.</span>
+                <strong>3. Reveal</strong>
+                <span className="muted">After delivery is ready, the buyer reveals and downloads.</span>
               </div>
             </div>
             <div className="callout">
-              <strong>Best next step in dev</strong>
-              <span className="muted">Configure env values, connect a wallet, create a listing, then verify the buyer flow from the products page.</span>
+              <strong>Start anywhere</strong>
+              <span className="muted">Go to Seller to publish, Products to buy, or Purchases to open what you already own.</span>
             </div>
           </div>
         </div>
@@ -71,29 +69,40 @@ export default function HomePage() {
       <section className="grid grid-2">
         <div className="card surface">
           <div>
-            <h2 className="section-title">Built for fast iteration</h2>
-            <p className="muted">The current workspace is optimized for prototyping the full encrypted commerce loop before deeper on-chain integration lands.</p>
+            <span className="eyebrow">What you can do</span>
+            <h2 className="section-title">Focused and minimal</h2>
+            <p className="muted">Each page is built around one main job, so the product is easier to understand and easier to use.</p>
           </div>
-          <div className="grid">
-            <span className="badge">Seller tooling</span>
-            <span className="badge">Buyer payload prep</span>
-            <span className="badge">Local browser state</span>
+          <div className="feature-grid">
+            <div className="step-item">
+              <strong>Seller</strong>
+              <span className="muted">Create and publish locked listings.</span>
+            </div>
+            <div className="step-item">
+              <strong>Products</strong>
+              <span className="muted">Browse and buy available products.</span>
+            </div>
+            <div className="step-item">
+              <strong>Purchases</strong>
+              <span className="muted">Reveal and download what has been delivered.</span>
+            </div>
           </div>
         </div>
         <div className="card surface">
           <div>
-            <h2 className="section-title">Suggested journey</h2>
-            <p className="muted">Move through the product flow in order so each page has meaningful data to display.</p>
+            <span className="eyebrow">Quick navigation</span>
+            <h2 className="section-title">Open the page you need</h2>
+            <p className="muted">No extra steps, no onboarding wall. Just go directly to the part you want to use.</p>
           </div>
           <div className="grid">
             <Link className="button secondary" href="/seller">
-              Go to seller workbench
+              Seller
             </Link>
             <Link className="button secondary" href="/products">
-              Review catalog and prepare purchase
+              Products
             </Link>
             <Link className="button secondary" href="/purchases">
-              Inspect delivery keys and purchase intents
+              Purchases
             </Link>
           </div>
         </div>

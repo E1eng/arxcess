@@ -9,7 +9,7 @@
     "dev": "npm run dev --workspace frontend",
     "build": "npm run build --workspace frontend",
     "build:contracts": "cargo build --manifest-path contracts/programs/arxcess/Cargo.toml",
-    "build:anchor": "anchor build --provider.cluster Devnet --provider.wallet ~/.config/solana/id.json",
+    "build:anchor": "bash -lc 'cd contracts && anchor build --provider.cluster Devnet --provider.wallet ~/.config/solana/id.json'",
     "lint": "npm run lint --workspace frontend",
     "typecheck": "npm run typecheck --workspace frontend"
   },

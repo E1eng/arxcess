@@ -3,8 +3,7 @@
 import Image from "next/image";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { PROTOCOL_FEE_BPS, randomHexId, type ProductMetadata } from "@arxcess/sdk";
-import { InfoButton, OverlayDialog } from "@/components/ui/overlay-dialog";
+import { randomHexId, type ProductMetadata } from "@arxcess/sdk";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
@@ -15,6 +14,7 @@ import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
 import { saveStoredSellerDeliveryMaterial, type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
+import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
 
 const initialForm = {
   title: "",
@@ -25,26 +25,6 @@ const initialForm = {
   maxAccessCount: "3",
   revocable: true
 };
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function truncateValue(value: string, head = 10, tail = 8) {
-  if (value.length <= head + tail + 3) {
-    return value;
-  }
-
-  return `${value.slice(0, head)}...${value.slice(-tail)}`;
-}
 
 function inferPreviewMode(file: File | null) {
   if (!file) {
@@ -67,7 +47,6 @@ export function SellerWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
-  const [isFlowDialogOpen, setIsFlowDialogOpen] = useState(false);
   const [result, setResult] = useState<
     | {
         listing: LocalProductListing;
@@ -79,22 +58,6 @@ export function SellerWorkbench() {
   >(null);
   const sellerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
-  const estimatedFeeSol = useMemo(() => {
-    const amount = Number(form.priceSol || 0);
-    if (!Number.isFinite(amount)) {
-      return "0.0000";
-    }
-
-    return ((amount * PROTOCOL_FEE_BPS) / 10_000).toFixed(4);
-  }, [form.priceSol]);
-  const estimatedSellerTakeHome = useMemo(() => {
-    const amount = Number(form.priceSol || 0);
-    if (!Number.isFinite(amount)) {
-      return "0.0000";
-    }
-
-    return Math.max(amount - Number(estimatedFeeSol), 0).toFixed(4);
-  }, [estimatedFeeSol, form.priceSol]);
   const previewMode = useMemo(() => inferPreviewMode(file), [file]);
 
   useEffect(() => {
@@ -284,14 +247,24 @@ export function SellerWorkbench() {
 
   return (
     <div className="grid">
+      <section className="card surface page-intro">
+        <div className="page-intro__top">
+          <div>
+            <span className="eyebrow">Seller</span>
+            <h2 className="section-title">Create a locked product listing</h2>
+            <p className="muted">Fill in the listing, upload the file, and publish.</p>
+          </div>
+          <div className="page-intro__meta">
+            <span className="badge badge--neutral">Seller wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-2 marketplace-split">
         <div className="card surface">
           <div>
-            <div className="title-with-action">
-              <h2 className="section-title">Create encrypted listing</h2>
-              <InfoButton label="View seller flow details" onClick={() => setIsFlowDialogOpen(true)} />
-            </div>
-            <p className="muted">Publish the commercial shell of your product while the full asset stays encrypted until a buyer pays.</p>
+            <h2 className="section-title">Listing details</h2>
+            <p className="muted">Add the product info and the file buyers will unlock after purchase.</p>
           </div>
           <form className="grid" onSubmit={handleSubmit}>
             <label>
@@ -346,17 +319,22 @@ export function SellerWorkbench() {
               <button className="button" type="submit" disabled={busy || !file}>
                 {busy ? "Publishing in progress..." : "Publish listing on-chain"}
               </button>
-              <span className="badge">Seller wallet: {sellerWallet ?? "not connected"}</span>
+              <span className="badge badge--neutral">Seller wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
             </div>
           </form>
-          {statusMessage ? <div className="badge">{statusMessage}</div> : null}
+          {statusMessage ? (
+            <div className="callout callout--info">
+              <strong>Publish status</strong>
+              <span className="muted">{statusMessage}</span>
+            </div>
+          ) : null}
         </div>
 
         <div className="card surface accent-card">
           <div>
-            <span className="badge">Preview before publish</span>
-            <h3 className="section-title">What buyers will understand first</h3>
-            <p className="muted">They should see the offer, the price, and that the real asset only unlocks after purchase.</p>
+            <span className="badge">Preview</span>
+            <h3 className="section-title">Listing preview</h3>
+            <p className="muted">Check the title, file, and state before publishing.</p>
           </div>
           <div className="asset-stage">
             <div className="asset-stage__media">
@@ -369,8 +347,8 @@ export function SellerWorkbench() {
                     <strong>{file ? file.name : "Upload a file to preview it here"}</strong>
                     <span className="muted">
                       {file
-                        ? "This public-facing preview helps the seller verify the listing before publishing."
-                        : "For an MVP, this panel should preview the public cover or representative asset state before encryption."}
+                        ? "Preview is ready. Buyers will only receive the unlocked asset after purchase and delivery."
+                        : "Add a file to preview the locked product card before publishing."}
                     </span>
                   </div>
                 )}
@@ -378,21 +356,7 @@ export function SellerWorkbench() {
               <span className="badge">Encrypted asset</span>
               <strong>{form.title || "Untitled listing"}</strong>
               <span className="muted">{selectedAssetLabel}</span>
-              <span className="asset-stage__lock">Locked until checkout + sealed delivery</span>
-            </div>
-            <div className="metric-grid">
-              <div className="kpi compact-kpi">
-                <span className="muted">Buyer price</span>
-                <strong>{form.priceSol || "0.00"} SOL</strong>
-              </div>
-              <div className="kpi compact-kpi">
-                <span className="muted">Protocol fee</span>
-                <strong>{estimatedFeeSol} SOL</strong>
-              </div>
-              <div className="kpi compact-kpi">
-                <span className="muted">Seller receives</span>
-                <strong>{estimatedSellerTakeHome} SOL</strong>
-              </div>
+              <span className="asset-stage__lock">Locked until purchase</span>
             </div>
           </div>
           <div className="detail-list">
@@ -406,11 +370,11 @@ export function SellerWorkbench() {
             </div>
             <div className="detail-row">
               <span className="muted">Reveal mode</span>
-              <strong>Decrypt after purchase</strong>
+              <strong>Buyer reveals after delivery</strong>
             </div>
             <div className="detail-row">
               <span className="muted">License duration</span>
-              <strong>{form.licenseDurationDays} days</strong>
+              <strong>{formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)}</strong>
             </div>
             <div className="detail-row">
               <span className="muted">Max reveals</span>
@@ -420,87 +384,19 @@ export function SellerWorkbench() {
               <span className="muted">Revocable</span>
               <strong>{form.revocable ? "Yes" : "No"}</strong>
             </div>
-            <div className="detail-row">
-              <span className="muted">Publish path</span>
-              <strong>Encrypt → Pinata → Wallet signature → Program publish</strong>
-            </div>
           </div>
         </div>
       </div>
 
       {result ? (
-        <div className="card surface">
+        <div className="callout callout--success">
           <div>
-            <span className="badge">Listing published</span>
-            <h3 className="section-title">Your listing is ready for the marketplace</h3>
-            <p className="muted">The public storefront is now set. The encrypted file stays locked until a buyer completes checkout.</p>
-          </div>
-          <div className="grid grid-2 marketplace-split">
-            <div className="asset-stage">
-              <div className="asset-stage__media success">
-                <span className="badge">{result.listing.category}</span>
-                <strong>{result.listing.title}</strong>
-                <span className="muted">{result.listing.description}</span>
-                <span className="asset-stage__lock">Asset size {formatBytes(result.listing.fileSizeBytes)} · {result.listing.mimeType}</span>
-              </div>
-              <div className="row">
-                <a className="button secondary" href={result.listing.metadataGatewayUrl} target="_blank" rel="noreferrer">
-                  View metadata
-                </a>
-                <a className="button secondary" href={result.listing.ciphertextGatewayUrl} target="_blank" rel="noreferrer">
-                  View ciphertext
-                </a>
-              </div>
-            </div>
-            <div className="grid">
-              <div className="detail-list">
-                <div className="detail-row">
-                  <span className="muted">Product ID</span>
-                  <strong>{truncateValue(result.listing.productIdHex)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Metadata CID</span>
-                  <strong>{truncateValue(result.listing.metadataCid)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Ciphertext CID</span>
-                  <strong>{truncateValue(result.listing.ciphertextCid)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Key commitment</span>
-                  <strong>{truncateValue(result.keyCommitmentHex)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Vault handle</span>
-                  <strong>{truncateValue(result.vaultHandleHex)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Publish tx</span>
-                  <strong>{truncateValue(result.publishSignature, 16, 12)}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">License</span>
-                  <strong>{result.listing.policy.licenseDurationSeconds === 0 ? "No expiry" : `${Math.floor(result.listing.policy.licenseDurationSeconds / 86400)} days`}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Max reveals</span>
-                  <strong>{result.listing.policy.maxAccessCount}</strong>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Flow</span>
-                  <strong>The listing is live, buyers can pay on-chain, and the seller finalizes sealed delivery before buyers reveal locally.</strong>
-                </div>
-              </div>
-            </div>
+            <strong>Listing published</strong>
+            <span className="muted">{result.listing.title} is now live in the marketplace. When someone buys it, the purchase will appear in Purchases until delivery is ready.</span>
           </div>
         </div>
       ) : null}
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
-      <OverlayDialog open={isFlowDialogOpen} title="Seller flow" onClose={() => setIsFlowDialogOpen(false)}>
-        <span>1. Seller encrypts the asset in the browser and uploads ciphertext plus metadata.</span>
-        <span>2. The listing is published on-chain and the seller browser keeps the delivery material locally.</span>
-        <span>3. When a buyer pays, the seller must finalize delivery from the seller environment that still has the delivery material.</span>
-      </OverlayDialog>
     </div>
   );
 }

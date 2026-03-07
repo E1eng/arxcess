@@ -8,7 +8,21 @@ export function useDeliveryKeys(wallet: string | null) {
   const [keypair, setKeypair] = useState<DeliveryKeypair | null>(() => getStoredDeliveryKeypair(wallet));
 
   useEffect(() => {
-    setKeypair(getStoredDeliveryKeypair(wallet));
+    if (!wallet) {
+      setKeypair(null);
+      return;
+    }
+
+    const stored = getStoredDeliveryKeypair(wallet);
+
+    if (stored) {
+      setKeypair(stored);
+      return;
+    }
+
+    const created = generateDeliveryKeypair();
+    saveStoredDeliveryKeypair(wallet, created);
+    setKeypair(created);
   }, [wallet]);
 
   function ensureKeypair() {

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { type ProductMetadata } from "@arxcess/sdk";
 import { evaluateDeliveryForFinalize } from "@/lib/access/delivery-evaluator";
-import { InfoButton, OverlayDialog } from "@/components/ui/overlay-dialog";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
 import { createDeliveryMaterialDigestHex, unsealDeliveryMaterial } from "@/lib/crypto/delivery";
@@ -17,26 +16,10 @@ import { fetchOnchainPurchaseStates, type DecodedPurchaseState } from "@/lib/sol
 import { buildConsumeAccessTransaction, buildFinalizeDeliveryTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
 import { clearStoredMarketplaceState, getStoredPurchase, getStoredSellerDeliveryMaterial, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { base64ToBytes } from "@/lib/utils/bytes";
-
-function truncateValue(value: string, head = 12, tail = 8) {
-  if (value.length <= head + tail + 3) {
-    return value;
-  }
-
-  return `${value.slice(0, head)}...${value.slice(-tail)}`;
-}
+import { formatOptionalDateTime, truncateValue } from "@/lib/utils/format";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-function isConsumeAccessUnsupported(message: string) {
-  return (
-    message.includes("InstructionFallbackNotFound") ||
-    message.includes("Fallback functions are not supported") ||
-    message.includes('"Custom":101') ||
-    message.includes("custom program error: 0x65")
-  );
 }
 
 export function PurchasesList() {
@@ -45,12 +28,12 @@ export function PurchasesList() {
   const { purchases, refreshPurchases } = usePurchases();
   const { products } = useProducts();
   const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-  const { keypair, ensureKeypair } = useDeliveryKeys(buyerWallet);
+  const { keypair } = useDeliveryKeys(buyerWallet);
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
   const [revealedPurchaseId, setRevealedPurchaseId] = useState<string | null>(null);
-  const [isFlowDialogOpen, setIsFlowDialogOpen] = useState(false);
   const purchaseCards = useMemo(
     () =>
       purchases.map((purchase) => ({
@@ -134,6 +117,7 @@ export function PurchasesList() {
 
     setBusyPurchaseId(purchaseIdHex);
     setError(null);
+    setStatusMessage("Preparing seller delivery finalization...");
 
     try {
       const onchain = onchainPurchaseStates[purchaseIdHex];
@@ -216,7 +200,9 @@ export function PurchasesList() {
         deliveryMaterialDigestHex
       });
       refreshPurchases();
+      setStatusMessage("Delivery finalized successfully. The buyer can now reveal and download the asset from the library.");
     } catch (cause) {
+      setStatusMessage(null);
       setError(cause instanceof Error ? cause.message : "Failed to finalize delivery.");
     } finally {
       setBusyPurchaseId(null);
@@ -254,6 +240,7 @@ export function PurchasesList() {
 
     setBusyPurchaseId(purchaseIdHex);
     setError(null);
+    setStatusMessage("Submitting revoke transaction...");
 
     try {
       const { transaction } = await buildRevokePurchaseTransaction({
@@ -282,7 +269,9 @@ export function PurchasesList() {
         finalizeSignature: purchase.finalizeSignature ?? revokeSignature
       });
       refreshPurchases();
+      setStatusMessage("Access revoked successfully. Future reveals are now blocked for this purchase.");
     } catch (cause) {
+      setStatusMessage(null);
       setError(cause instanceof Error ? cause.message : "Failed to revoke purchase.");
     } finally {
       setBusyPurchaseId(null);
@@ -294,16 +283,6 @@ export function PurchasesList() {
     const product = purchase ? products.find((entry) => entry.productIdHex === purchase.productIdHex) ?? null : null;
     const onchain = onchainPurchaseStates[purchaseIdHex];
     let stage = "prepare";
-    let consumeAccessUnavailable = false;
-    const diagnostics = {
-      stage: "prepare",
-      payloadSource: "unknown",
-      metadataIv: "0",
-      payloadsMatch: "na",
-      storedDigest: "none",
-      revealDigest: "none",
-      ciphertextHashMatch: "na"
-    };
 
     if (!purchase || !product) {
       setError("Purchase or listing data is missing.");
@@ -373,36 +352,26 @@ export function PurchasesList() {
 
     setBusyPurchaseId(purchaseIdHex);
     setError(null);
+    setStatusMessage("Preparing secure reveal...");
 
     try {
       stage = "resolve_payload";
-      diagnostics.stage = stage;
       if (purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64 && purchase.sealedKeyBoxBase64 !== onchain.sealedKeyBoxBase64) {
-        setError("The local finalized delivery payload does not match the on-chain decoded payload. Using the local payload for reveal.");
+        setStatusMessage("The latest local finalized payload differs from the decoded on-chain payload. Using the local payload for this reveal.");
       }
 
-      diagnostics.payloadsMatch =
-        purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64
-          ? purchase.sealedKeyBoxBase64 === onchain.sealedKeyBoxBase64
-            ? "1"
-            : "0"
-          : "na";
-
       const sealedKeyBoxBase64 = purchase.sealedKeyBoxBase64 ?? onchain?.sealedKeyBoxBase64;
-      diagnostics.payloadSource = purchase.sealedKeyBoxBase64 ? "local" : onchain?.sealedKeyBoxBase64 ? "chain" : "missing";
 
       if (!sealedKeyBoxBase64) {
         throw new Error("Sealed delivery payload is missing from both local state and on-chain purchase state.");
       }
 
       stage = "unseal";
-      diagnostics.stage = stage;
       const deliveryMaterial = unsealDeliveryMaterial({
         sealedKeyBoxBase64,
         keypair: deliveryKeypair
       });
       stage = "metadata";
-      diagnostics.stage = stage;
       const metadataResponse = await fetch(product.metadataGatewayUrl, {
         method: "GET",
         cache: "no-store"
@@ -414,20 +383,16 @@ export function PurchasesList() {
 
       const metadata = (await metadataResponse.json()) as ProductMetadata;
       const iv = metadata.ivBase64 ? base64ToBytes(metadata.ivBase64) : deliveryMaterial.iv;
-      diagnostics.metadataIv = metadata.ivBase64 ? "1" : "0";
       const deliveryMaterialDigestHex = await createDeliveryMaterialDigestHex({
         contentKey: deliveryMaterial.contentKey,
         iv
       });
-      diagnostics.storedDigest = purchase.deliveryMaterialDigestHex ? purchase.deliveryMaterialDigestHex.slice(0, 10) : "none";
-      diagnostics.revealDigest = deliveryMaterialDigestHex.slice(0, 10);
 
       if (purchase.deliveryMaterialDigestHex && purchase.deliveryMaterialDigestHex !== deliveryMaterialDigestHex) {
         throw new Error("Buyer unsealed delivery material does not match the material the seller validated during finalize.");
       }
 
       stage = "ciphertext";
-      diagnostics.stage = stage;
       const response = await fetch(product.ciphertextGatewayUrl, {
         method: "GET",
         cache: "no-store"
@@ -439,21 +404,18 @@ export function PurchasesList() {
 
       const ciphertext = new Uint8Array(await response.arrayBuffer());
       const ciphertextHashHex = await sha256Hex(ciphertext);
-      diagnostics.ciphertextHashMatch = ciphertextHashHex === product.ciphertextHashHex ? "1" : "0";
 
       if (ciphertextHashHex !== product.ciphertextHashHex) {
         throw new Error("Downloaded ciphertext does not match the listing hash for this purchase.");
       }
 
       stage = "decrypt";
-      diagnostics.stage = stage;
       const plaintext = await decryptCiphertext({
         ciphertext,
         contentKey: deliveryMaterial.contentKey,
         iv
       });
       stage = "consume_access";
-      diagnostics.stage = stage;
       const { transaction } = await buildConsumeAccessTransaction({
         buyer: publicKey,
         listing: product,
@@ -464,77 +426,19 @@ export function PurchasesList() {
       transaction.recentBlockhash = latestBlockhash.blockhash;
       transaction.feePayer = publicKey;
 
-      stage = "simulate_consume_access";
-      diagnostics.stage = stage;
-      try {
-        const simulation = await (connection as {
-          simulateTransaction: (
-            transaction: object,
-            config: {
-              commitment: "processed";
-              replaceRecentBlockhash: boolean;
-              sigVerify: boolean;
-            }
-          ) => Promise<{
-            value: {
-              err: unknown;
-              logs?: string[];
-            };
-          }>;
-        }).simulateTransaction(transaction, {
-          commitment: "processed",
-          replaceRecentBlockhash: true,
-          sigVerify: false
-        });
+      stage = "wallet_approval";
+      const consumeSignature = await sendTransaction(transaction, connection);
 
-        if (simulation.value.err) {
-          const logSuffix = simulation.value.logs?.length ? ` Logs: ${simulation.value.logs.slice(-8).join(" | ")}` : "";
-          throw new Error(`Consume access would fail on-chain: ${JSON.stringify(simulation.value.err)}.${logSuffix}`);
-        }
-      } catch (cause) {
-        const simulationMessage = cause instanceof Error ? cause.message : String(cause);
-
-        if (simulationMessage.includes("Consume access would fail on-chain")) {
-          if (isConsumeAccessUnsupported(simulationMessage)) {
-            consumeAccessUnavailable = true;
-          } else {
-            throw cause;
-          }
-        } else if (isConsumeAccessUnsupported(simulationMessage)) {
-          consumeAccessUnavailable = true;
-        }
-      }
-
-      if (!consumeAccessUnavailable) {
-        stage = "wallet_approval";
-        diagnostics.stage = stage;
-        try {
-          const consumeSignature = await sendTransaction(transaction, connection, {
-            skipPreflight: true
-          });
-
-          stage = "confirm_consume_access";
-          diagnostics.stage = stage;
-          await confirmTransactionOrThrow({
-            connection,
-            signature: consumeSignature,
-            blockhash: latestBlockhash.blockhash,
-            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-            label: "Consume access"
-          });
-        } catch (cause) {
-          const consumeMessage = cause instanceof Error ? cause.message : String(cause);
-
-          if (isConsumeAccessUnsupported(consumeMessage)) {
-            consumeAccessUnavailable = true;
-          } else {
-            throw cause;
-          }
-        }
-      }
+      stage = "confirm_consume_access";
+      await confirmTransactionOrThrow({
+        connection,
+        signature: consumeSignature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        label: "Consume access"
+      });
 
       stage = "download";
-      diagnostics.stage = stage;
       const blob = new Blob([toArrayBuffer(plaintext)], { type: product.mimeType });
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -552,12 +456,10 @@ export function PurchasesList() {
       });
       refreshPurchases();
       setRevealedPurchaseId(purchaseIdHex);
-
-      if (consumeAccessUnavailable) {
-        setError("Asset revealed successfully, but the deployed program does not support on-chain consume access yet. Access usage was tracked locally for this session.");
-      }
+      setStatusMessage("Asset decrypted successfully. Secure download started automatically.");
       return;
     } catch (cause) {
+      setStatusMessage(null);
       const message = cause instanceof Error ? cause.message : String(cause);
       if (message.includes("Failed to unseal delivery material")) {
         setError("Reveal failed because the buyer delivery keypair in this browser does not match the one used during checkout.");
@@ -567,8 +469,6 @@ export function PurchasesList() {
         setError("Reveal failed because the finalized delivery payload is malformed. The seller likely finalized with mismatched delivery material.");
       } else if (message.includes("Consume access failed on-chain")) {
         setError(`Reveal decrypted successfully, but consume access failed on-chain. ${message}`);
-      } else if (message.includes("Consume access would fail on-chain")) {
-        setError(`Reveal decrypted successfully, but the consume access transaction would be rejected on-chain. ${message}`);
       } else if (stage === "wallet_approval" || stage === "confirm_consume_access" || stage === "download") {
         setError(`Reveal decrypted successfully, but failed during ${stage}. ${message}`);
       } else if (
@@ -576,9 +476,7 @@ export function PurchasesList() {
         message.includes("Downloaded ciphertext does not match") ||
         message.includes("Unexpected error")
       ) {
-        setError(
-          `Reveal failed while decrypting the downloaded ciphertext. The sealed delivery material or encrypted file may not match this purchase. [stage=${diagnostics.stage} src=${diagnostics.payloadSource} same=${diagnostics.payloadsMatch} iv=${diagnostics.metadataIv} stored=${diagnostics.storedDigest} reveal=${diagnostics.revealDigest} hash=${diagnostics.ciphertextHashMatch}]`
-        );
+        setError("Reveal failed while decrypting the downloaded ciphertext. The sealed delivery material or encrypted file may not match this purchase.");
       } else {
         setError(message || "Failed to reveal asset.");
       }
@@ -590,6 +488,7 @@ export function PurchasesList() {
   function resetLocalState() {
     clearStoredMarketplaceState();
     setError(null);
+    setStatusMessage(null);
     setBusyPurchaseId(null);
     setRevealedPurchaseId(null);
     setOnchainPurchaseStates({});
@@ -598,44 +497,34 @@ export function PurchasesList() {
 
   return (
     <div className="grid">
-      <div className="card">
-        <div>
-          <div className="title-with-action">
-            <h2 className="section-title">Buyer delivery keys</h2>
-            <InfoButton label="View buyer key flow details" onClick={() => setIsFlowDialogOpen(true)} />
+      <section className="card surface page-intro">
+        <div className="page-intro__top">
+          <div>
+            <span className="eyebrow">Purchases</span>
+            <h2 className="section-title">Your purchased products</h2>
+            <p className="muted">Wait for delivery, then reveal and download your asset from here.</p>
           </div>
-          <p className="muted">This keypair becomes the buyer-side identity for sealed delivery. Once payment is confirmed, the reveal step should use this key to unlock the purchased asset.</p>
-        </div>
-        <div className="row">
-          <button className="button" type="button" onClick={() => ensureKeypair()}>
-            {keypair ? "Rotate later manually" : "Generate delivery keypair"}
-          </button>
-          <span className="badge">{keypair ? "Keypair ready" : "Keypair missing"}</span>
-        </div>
-        {keypair ? (
-          <div className="detail-list">
-            <div className="detail-row">
-              <span className="muted">Delivery public key</span>
-              <strong>{truncateValue(keypair.publicKeyBase64, 16, 12)}</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">Role in the flow</span>
-              <strong>Receives the sealed content key after payment</strong>
-            </div>
+          <div className="page-intro__meta">
+            <span className="badge badge--neutral">Buyer wallet: {buyerWallet ? truncateValue(buyerWallet, 12, 10) : "not connected"}</span>
           </div>
-        ) : null}
-      </div>
-      <div className="card">
-        <div>
-          <div className="title-with-action">
-            <h2 className="section-title">Buyer library</h2>
-            <InfoButton label="View purchase flow details" onClick={() => setIsFlowDialogOpen(true)} />
-          </div>
-          <p className="muted">This area should become the post-checkout home for every purchase.</p>
         </div>
-        <div className="row">
+      </section>
+
+      {statusMessage ? (
+        <div className="callout callout--success">
+          <strong>Status</strong>
+          <span className="muted">{statusMessage}</span>
+        </div>
+      ) : null}
+
+      <div className="card surface">
+        <div className="title-with-action">
+          <div>
+            <h2 className="section-title">Library</h2>
+            <p className="muted">Everything you bought appears here.</p>
+          </div>
           <button className="button secondary" type="button" onClick={resetLocalState}>
-            Reset local demo state
+            Reset demo data
           </button>
         </div>
         {purchaseCards.length === 0 ? (
@@ -647,96 +536,60 @@ export function PurchasesList() {
               const effectiveStatus = onchain?.statusLabel ?? purchase.status;
 
               return (
-              <div key={purchase.purchaseIdHex} className="card surface product-card">
-                <div className="asset-stage__media product-card__media">
+                <div key={purchase.purchaseIdHex} className="card surface product-card">
+                  <div className="asset-stage__media product-card__media">
+                    <div className="row">
+                      <span className="badge">{product?.category ?? "purchase"}</span>
+                      <span className="badge badge--neutral">{effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" ? "Delivered" : "Waiting delivery"}</span>
+                    </div>
+                    <strong>{product?.title ?? "Unknown listing"}</strong>
+                    <span className="muted">{product?.description ?? "The matching product data is not available in local storage."}</span>
+                    <span className="asset-stage__lock">
+                      {effectiveStatus === "prepared"
+                        ? "Payment has not been executed yet."
+                        : effectiveStatus === "revoked"
+                          ? "Access was revoked."
+                          : effectiveStatus === "delivered"
+                            ? "Ready to reveal and download."
+                            : "Waiting for seller delivery."}
+                    </span>
+                  </div>
+                  <div className="detail-list">
+                    <div className="detail-row">
+                      <span className="muted">Amount</span>
+                      <strong>{purchase.amountSol} SOL</strong>
+                    </div>
+                    <div className="detail-row">
+                      <span className="muted">Access count</span>
+                      <strong>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</strong>
+                    </div>
+                    <div className="detail-row">
+                      <span className="muted">Expires</span>
+                      <strong>{formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "No expiry"}</strong>
+                    </div>
+                    <div className="detail-row">
+                      <span className="muted">Revoked</span>
+                      <strong>{formatOptionalDateTime(onchain?.revokedAt ? onchain.revokedAt * 1000 : purchase.revokedAt) ?? "Active"}</strong>
+                    </div>
+                  </div>
                   <div className="row">
-                    <span className="badge">{product?.category ?? "purchase"}</span>
-                    <span className="badge">{effectiveStatus === "prepared" ? "Checkout staged" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" ? "Delivered" : "On-chain purchase pending seal"}</span>
-                  </div>
-                  <strong>{product?.title ?? "Unknown listing"}</strong>
-                  <span className="muted">{product?.description ?? "The matching product data is not available in local storage."}</span>
-                  <span className="asset-stage__lock">
-                    {effectiveStatus === "prepared"
-                      ? "Payment has not been executed yet. Asset remains locked."
-                      : effectiveStatus === "revoked"
-                        ? "Access was revoked. Reveal is disabled."
-                      : effectiveStatus === "delivered"
-                        ? "Sealed delivery is ready. Buyer can reveal the asset locally."
-                        : "Waiting for sealed delivery so the buyer can reveal the asset."}
-                  </span>
-                </div>
-                <div className="detail-list">
-                  <div className="detail-row">
-                    <span className="muted">Purchase ID</span>
-                    <strong>{truncateValue(purchase.purchaseIdHex)}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Amount</span>
-                    <strong>{purchase.amountSol} SOL</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Buyer</span>
-                    <strong>{purchase.buyerWallet ? truncateValue(purchase.buyerWallet) : "not connected"}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Delivery key</span>
-                    <strong>{truncateValue(purchase.buyerDeliveryPublicKeyBase64, 16, 12)}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Transaction</span>
-                    <strong>{purchase.transactionSignature ? truncateValue(purchase.transactionSignature, 16, 12) : "not sent"}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Finalize tx</span>
-                    <strong>{purchase.finalizeSignature ? truncateValue(purchase.finalizeSignature, 16, 12) : "not finalized"}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Access count</span>
-                    <strong>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Expires</span>
-                    <strong>{onchain?.expiresAt ? new Date(onchain.expiresAt * 1000).toLocaleString() : purchase.expiresAt ? new Date(purchase.expiresAt).toLocaleString() : "No expiry"}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Revoked</span>
-                    <strong>{onchain?.revokedAt ? new Date(onchain.revokedAt * 1000).toLocaleString() : purchase.revokedAt ? new Date(purchase.revokedAt).toLocaleString() : "Active"}</strong>
+                    <button className="button secondary" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "pending_seal"}>
+                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus !== "delivered" ? "Finalizing..." : "Finalize"}
+                    </button>
+                    <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "delivered"}>
+                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "delivered" ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
+                    </button>
+                    <button className="button secondary" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus === "revoked" || !product?.policy.revocable}>
+                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "revoked" ? "Revoking..." : "Revoke access"}
+                    </button>
                   </div>
                 </div>
-                <div className="row">
-                  <button className="button secondary" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "pending_seal"}>
-                    {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus !== "delivered" ? "Finalizing..." : "Finalize delivery"}
-                  </button>
-                  <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "delivered"}>
-                    {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "delivered" ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Reveal again" : "Reveal asset"}
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus === "revoked" || !product?.policy.revocable}>
-                    {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "revoked" ? "Revoking..." : "Revoke access"}
-                  </button>
-                </div>
-                <div className="detail-row">
-                  <span className="muted">Flow</span>
-                  <strong>
-                    {effectiveStatus === "revoked"
-                      ? "This purchase was revoked, so future reveals are blocked."
-                      : effectiveStatus === "delivered"
-                        ? "Payment and delivery are complete. Reveal uses the original buyer delivery keypair stored in this browser."
-                        : effectiveStatus === "pending_seal"
-                          ? "Payment is confirmed on-chain. Waiting for the seller to finalize sealed delivery before reveal is possible."
-                          : "Checkout is staged locally and the purchase must be submitted on-chain before delivery can begin."}
-                  </strong>
-                </div>
-              </div>
-            );})}
+              );
+            })}
           </div>
         )}
       </div>
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
-      <OverlayDialog open={isFlowDialogOpen} title="Purchase flow" onClose={() => setIsFlowDialogOpen(false)}>
-        <span>1. Buyer pays on-chain and the purchase becomes pending delivery.</span>
-        <span>2. Seller finalizes a sealed delivery package using the seller environment that published the listing.</span>
-        <span>3. Buyer reveals the asset using the original buyer wallet and delivery keypair from checkout.</span>
-      </OverlayDialog>
     </div>
   );
 }

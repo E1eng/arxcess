@@ -5,7 +5,10 @@ pub mod deposit_product_key;
 pub mod finalize_delivery;
 pub mod pause_product;
 pub mod purchase_product;
+pub mod request_deposit_product_key;
+pub mod request_evaluate_and_seal;
 pub mod revoke_purchase;
+pub mod stage_product_arcium_material;
 
 pub use activate_product::*;
 pub use consume_access::*;
@@ -14,4 +17,7 @@ pub use deposit_product_key::*;
 pub use finalize_delivery::*;
 pub use pause_product::*;
 pub use purchase_product::*;
+pub use request_deposit_product_key::*;
+pub use request_evaluate_and_seal::*;
 pub use revoke_purchase::*;
+pub use stage_product_arcium_material::*;

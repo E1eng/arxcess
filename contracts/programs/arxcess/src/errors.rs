@@ -31,5 +31,11 @@ pub enum ArxcessError {
     #[msg("This product is not revocable")]
     ProductNotRevocable,
     #[msg("Delivery approval was denied")]
-    DeliveryNotApproved
+    DeliveryNotApproved,
+    #[msg("Arcium computation is already in flight")]
+    ArciumComputationInFlight,
+    #[msg("MXE cluster is not initialized for this program")]
+    ClusterNotSet,
+    #[msg("Arcium custody material is missing")]
+    MissingArciumCustody
 }

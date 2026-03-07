@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Arxcess",
-  description: "Trust-minimized digital asset marketplace on Solana + Arcium"
+  description: "Trust-minimized digital asset marketplace"
 };
 
 export default function RootLayout({ children }: PropsWithChildren) {

@@ -17,7 +17,7 @@ pub struct CreateProduct<'info> {
         bump,
         space = ProductState::SPACE
     )]
-    pub product_state: Account<'info, ProductState>,
+    pub product_state: Box<Account<'info, ProductState>>,
     pub system_program: Program<'info, System>
 }
 

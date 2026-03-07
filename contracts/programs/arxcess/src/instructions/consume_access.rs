@@ -7,9 +7,9 @@ use crate::state::{ProductState, PurchaseState};
 pub struct ConsumeAccess<'info> {
     pub buyer: Signer<'info>,
     #[account(address = purchase_state.product)]
-    pub product_state: Account<'info, ProductState>,
+    pub product_state: Box<Account<'info, ProductState>>,
     #[account(mut)]
-    pub purchase_state: Account<'info, PurchaseState>
+    pub purchase_state: Box<Account<'info, PurchaseState>>
 }
 
 pub fn handler(ctx: Context<ConsumeAccess>) -> Result<()> {

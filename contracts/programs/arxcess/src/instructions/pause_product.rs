@@ -8,7 +8,7 @@ use crate::state::ProductState;
 pub struct PauseProduct<'info> {
     pub seller: Signer<'info>,
     #[account(mut, has_one = seller)]
-    pub product_state: Account<'info, ProductState>
+    pub product_state: Box<Account<'info, ProductState>>
 }
 
 pub fn handler(ctx: Context<PauseProduct>) -> Result<()> {

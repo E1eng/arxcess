@@ -4,6 +4,9 @@ use crate::constants::{CIPHERTEXT_CID_BYTES, METADATA_URI_BYTES, PRODUCT_STATUS_
 use crate::errors::ArxcessError;
 use crate::utils::copy_str_to_fixed;
 
+const PRODUCT_BASE_STATE_BYTES: usize = 1 + 32 + 32 + 32 + 8 + 2 + 1 + METADATA_URI_BYTES + CIPHERTEXT_CID_BYTES + 32 + 8 + 32 + 32 + 8 + 4 + 1 + 8 + 8 + 8;
+const ARCIUM_CUSTODY_CIPHERTEXT_COUNT: usize = 2;
+
 #[account]
 pub struct ProductState {
     pub bump: u8,
@@ -24,11 +27,19 @@ pub struct ProductState {
     pub revocable: bool,
     pub total_sales: u64,
     pub created_at: i64,
-    pub updated_at: i64
+    pub updated_at: i64,
+    pub arcium_custody_ready: bool,
+    pub arcium_deposit_computation_offset: u64,
+    pub arcium_deposit_requested_at: i64,
+    pub arcium_key_nonce: u128,
+    pub arcium_key_ciphertexts: [[u8; 32]; ARCIUM_CUSTODY_CIPHERTEXT_COUNT]
 }
 
 impl ProductState {
-    pub const SPACE: usize = 8 + 1 + 32 + 32 + 32 + 8 + 2 + 1 + METADATA_URI_BYTES + CIPHERTEXT_CID_BYTES + 32 + 8 + 32 + 32 + 8 + 4 + 1 + 8 + 8 + 8;
+    pub const ARCIUM_MXE_CIPHERTEXT_COUNT: usize = ARCIUM_CUSTODY_CIPHERTEXT_COUNT;
+    pub const ARCIUM_MXE_MATERIAL_LEN: u32 = (16 + (32 * ARCIUM_CUSTODY_CIPHERTEXT_COUNT)) as u32;
+    pub const ARCIUM_MXE_MATERIAL_OFFSET: u32 = (8 + PRODUCT_BASE_STATE_BYTES + 1 + 8 + 8) as u32;
+    pub const SPACE: usize = 8 + PRODUCT_BASE_STATE_BYTES + 1 + 8 + 8 + 16 + (32 * ARCIUM_CUSTODY_CIPHERTEXT_COUNT);
 
     pub fn initialize(
         &mut self,
@@ -69,6 +80,11 @@ impl ProductState {
         self.total_sales = 0;
         self.created_at = now;
         self.updated_at = now;
+        self.arcium_custody_ready = false;
+        self.arcium_deposit_computation_offset = 0;
+        self.arcium_deposit_requested_at = 0;
+        self.arcium_key_nonce = 0;
+        self.arcium_key_ciphertexts = [[0u8; 32]; ARCIUM_CUSTODY_CIPHERTEXT_COUNT];
         Ok(())
     }
 }

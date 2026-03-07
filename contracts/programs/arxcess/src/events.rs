@@ -16,6 +16,23 @@ pub struct ProductKeyDeposited {
 }
 
 #[event]
+pub struct ArciumProductKeyComputationRequested {
+    pub product: Pubkey,
+    pub computation_offset: u64
+}
+
+#[event]
+pub struct ArciumProductKeyMaterialStaged {
+    pub product: Pubkey
+}
+
+#[event]
+pub struct ArciumProductKeySettled {
+    pub product: Pubkey,
+    pub computation_offset: u64
+}
+
+#[event]
 pub struct ProductActivated {
     pub product: Pubkey
 }
@@ -39,6 +56,19 @@ pub struct DeliveryFinalized {
     pub purchase: Pubkey,
     pub approval_flag: u8,
     pub sealed_key_len: u16
+}
+
+#[event]
+pub struct ArciumDeliveryComputationRequested {
+    pub purchase: Pubkey,
+    pub computation_offset: u64
+}
+
+#[event]
+pub struct ArciumDeliverySettled {
+    pub purchase: Pubkey,
+    pub computation_offset: u64,
+    pub approval_flag: u8
 }
 
 #[event]

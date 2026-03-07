@@ -63,6 +63,36 @@ export function ProductCatalog() {
     };
   }, [connection, products]);
 
+  function resolveProductStatusCopy(product: LocalProductListing, onchain: DecodedProductState | undefined) {
+    const custodyMode = product.custodyMode ?? "browser_demo";
+
+    if (!onchain) {
+      return {
+        badge: "Encrypted listing",
+        subtitle: "Preview only. Full asset unlocks after checkout."
+      };
+    }
+
+    if (custodyMode === "arcium" && onchain.statusLabel === "draft" && onchain.arciumDepositComputationOffset !== 0 && !onchain.arciumCustodyReady) {
+      return {
+        badge: "Arcium custody queued",
+        subtitle: "Publisher queued confidential custody and is waiting for the callback to settle before activation."
+      };
+    }
+
+    if (custodyMode === "arcium" && onchain.statusLabel === "draft" && onchain.arciumCustodyReady) {
+      return {
+        badge: "Custody ready",
+        subtitle: "Confidential custody is ready on-chain. The publisher can activate this listing next."
+      };
+    }
+
+    return {
+      badge: onchain.statusLabel,
+      subtitle: "Preview only. Full asset unlocks after checkout."
+    };
+  }
+
   async function preparePurchase(product: LocalProductListing) {
     if (!publicKey || !sendTransaction) {
       setError("Connect a wallet before buying on-chain.");
@@ -126,7 +156,8 @@ export function ProductCatalog() {
         expiresAt,
         revokedAt: null,
         createdAt: createdAt.toISOString(),
-        transactionSignature
+        transactionSignature,
+        deliveryMode: product.custodyMode ?? "browser_demo"
       };
 
       saveStoredPurchase(purchase);
@@ -174,17 +205,18 @@ export function ProductCatalog() {
         <div className="catalog-grid">
           {products.map((product) => {
             const onchain = onchainProductStates[product.productIdHex];
+            const statusCopy = resolveProductStatusCopy(product, onchain);
 
             return (
               <div key={product.productIdHex} className="card surface product-card">
                 <div className="asset-stage__media product-card__media">
                   <div className="row">
                     <span className="badge">{product.category}</span>
-                    <span className="badge badge--neutral">{onchain ? onchain.statusLabel : "Encrypted listing"}</span>
+                    <span className="badge badge--neutral">{statusCopy.badge}</span>
                   </div>
                   <strong>{product.title}</strong>
                   <span className="muted">{product.description}</span>
-                  <span className="asset-stage__lock">Preview only. Full asset unlocks after checkout.</span>
+                  <span className="asset-stage__lock">{statusCopy.subtitle}</span>
                 </div>
                 <div className="metric-grid">
                   <div className="kpi compact-kpi">

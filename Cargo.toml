@@ -5,11 +5,26 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[profile.release.build-override]
+opt-level = 3
+incremental = false
+codegen-units = 1
+
 [workspace.package]
 edition = "2021"
 license = "MIT"
 version = "0.1.0"
 
 [workspace.dependencies]
-anchor-lang = "0.30.1"
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+arcis = "0.8.5"
+arcium-anchor = "=0.8.5"
+arcium-client = { version = "=0.8.5", default-features = false }
+arcium-macros = "=0.8.5"
+blake3 = "=1.8.2"
 sha2 = "0.10"

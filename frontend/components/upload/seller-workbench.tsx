@@ -1,15 +1,17 @@
 "use client";
 
 import Image from "next/image";
+import { AnchorProvider } from "@coral-xyz/anchor";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId, type ProductMetadata } from "@arxcess/sdk";
+import { getArciumFrontendBlockMessage, getConfiguredCustodyMode, isArciumFrontendRuntimeReady, prepareListingCustody } from "@/lib/arcium/client";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
-import { buildCreateListingTransaction } from "@/lib/solana/arxcess";
+import { buildCreateListingTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
@@ -40,6 +42,7 @@ function inferPreviewMode(file: File | null) {
 
 export function SellerWorkbench() {
   const { connection } = useConnection();
+  const anchorWallet = useAnchorWallet();
   const { publicKey, sendTransaction } = useWallet();
   const [form, setForm] = useState(initialForm);
   const [file, setFile] = useState<File | null>(null);
@@ -57,6 +60,9 @@ export function SellerWorkbench() {
     | null
   >(null);
   const sellerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const configuredCustodyMode = getConfiguredCustodyMode();
+  const isArciumMode = configuredCustodyMode === "arcium";
+  const isArciumPublishBlocked = isArciumMode && !isArciumFrontendRuntimeReady("publish");
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
   const previewMode = useMemo(() => inferPreviewMode(file), [file]);
 
@@ -108,6 +114,11 @@ export function SellerWorkbench() {
       return;
     }
 
+    if (isArciumPublishBlocked) {
+      setError(getArciumFrontendBlockMessage("publish"));
+      return;
+    }
+
     const licenseDurationDays = Number(form.licenseDurationDays || 0);
     const maxAccessCount = Number(form.maxAccessCount || 0);
 
@@ -129,6 +140,7 @@ export function SellerWorkbench() {
     setStatusMessage("Encrypting the asset in your browser...");
 
     try {
+      const anchorProvider = anchorWallet ? new AnchorProvider(connection, anchorWallet, AnchorProvider.defaultOptions()) : null;
       const encrypted = await encryptFile(file);
       const ciphertextBytes = Uint8Array.from(encrypted.ciphertext);
       setStatusMessage("Uploading ciphertext to Pinata...");
@@ -148,6 +160,17 @@ export function SellerWorkbench() {
 
       setStatusMessage("Uploading metadata to Pinata...");
       const metadataUpload = await uploadJsonToPinata(metadata, `${productIdHex}-metadata`);
+      setStatusMessage(configuredCustodyMode === "arcium" ? "Preparing Arcium custody..." : "Preparing explicit browser custody...");
+      const custody = await prepareListingCustody({
+        productIdHex,
+        sellerWallet: publicKey.toBase58(),
+        metadataUri: metadataUpload.gatewayUrl,
+        ciphertextHashHex: encrypted.ciphertextHashHex,
+        contentKeyBase64: encrypted.contentKeyBase64,
+        ivBase64: encrypted.ivBase64
+      }, {
+        provider: anchorProvider ?? undefined
+      });
 
       const listing: LocalProductListing = {
         productIdHex,
@@ -168,22 +191,68 @@ export function SellerWorkbench() {
           maxAccessCount,
           revocable: form.revocable
         },
+        custodyMode: custody.custodyMode,
+        vaultHandleHex: custody.vaultHandleHex,
+        keyCommitmentHex: custody.keyCommitmentHex,
         createdAt: new Date().toISOString()
       };
 
-      const { transaction, keyCommitmentHex, vaultHandleHex } = await buildCreateListingTransaction({
-        seller: publicKey,
-        productIdHex,
-        metadataUri: metadataUpload.gatewayUrl,
-        ciphertextCid: ciphertextUpload.cid,
-        ciphertextHashHex: encrypted.ciphertextHashHex,
-        priceLamports: solToLamports(form.priceSol),
-        fileSizeBytes: BigInt(encrypted.sizeBytes),
-        contentKeyBase64: encrypted.contentKeyBase64,
-        licenseDurationSeconds,
-        maxAccessCount,
-        revocable: form.revocable
-      });
+      let transaction;
+      let keyCommitmentHex = custody.keyCommitmentHex;
+      let vaultHandleHex = custody.vaultHandleHex;
+
+      if (custody.custodyMode === "arcium") {
+        if (!custody.arciumPublishMaterial) {
+          throw new Error("Arcium publish material is missing.");
+        }
+
+        const computationOffset = BigInt(Date.now());
+        const createTx = await buildCreateProductTransaction({
+          seller: publicKey,
+          productIdHex,
+          metadataUri: metadataUpload.gatewayUrl,
+          ciphertextCid: ciphertextUpload.cid,
+          ciphertextHashHex: encrypted.ciphertextHashHex,
+          priceLamports: solToLamports(form.priceSol),
+          fileSizeBytes: BigInt(encrypted.sizeBytes),
+          licenseDurationSeconds,
+          maxAccessCount,
+          revocable: form.revocable
+        });
+        const stageTx = await buildStageProductArciumMaterialTransaction({
+          seller: publicKey,
+          productIdHex,
+          encryptedKeyNonce: custody.arciumPublishMaterial.encryptedKeyNonce,
+          encryptedKeyCiphertexts: custody.arciumPublishMaterial.encryptedKeyCiphertexts
+        });
+        const requestTx = await buildRequestDepositProductKeyTransaction({
+          seller: publicKey,
+          productIdHex,
+          computationOffset
+        });
+
+        transaction = createTx.transaction.add(...stageTx.transaction.instructions, ...requestTx.transaction.instructions);
+      } else {
+        const legacy = await buildCreateListingTransaction({
+          seller: publicKey,
+          productIdHex,
+          metadataUri: metadataUpload.gatewayUrl,
+          ciphertextCid: ciphertextUpload.cid,
+          ciphertextHashHex: encrypted.ciphertextHashHex,
+          priceLamports: solToLamports(form.priceSol),
+          fileSizeBytes: BigInt(encrypted.sizeBytes),
+          vaultHandleHex: custody.vaultHandleHex!,
+          keyCommitmentHex: custody.keyCommitmentHex!,
+          licenseDurationSeconds,
+          maxAccessCount,
+          revocable: form.revocable
+        });
+
+        transaction = legacy.transaction;
+        keyCommitmentHex = legacy.keyCommitmentHex;
+        vaultHandleHex = legacy.vaultHandleHex;
+      }
+
       const latestBlockhash = await connection.getLatestBlockhash();
 
       transaction.recentBlockhash = latestBlockhash.blockhash;
@@ -219,19 +288,16 @@ export function SellerWorkbench() {
         }
       }
 
-      saveStoredSellerDeliveryMaterial(productIdHex, {
-        contentKeyBase64: encrypted.contentKeyBase64,
-        ivBase64: encrypted.ivBase64,
-        ciphertextHashHex: encrypted.ciphertextHashHex,
-        keyCommitmentHex
-      });
+      if (custody.sellerDeliveryMaterial) {
+        saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
+      }
       saveStoredProduct(storedListing);
-      setStatusMessage("Listing published successfully.");
+      setStatusMessage(custody.custodyMode === "arcium" ? "Listing created and Arcium custody queued. Activate after the confidential callback settles on-chain." : "Listing published successfully.");
 
       setResult({
         listing: storedListing,
-        keyCommitmentHex,
-        vaultHandleHex,
+        keyCommitmentHex: keyCommitmentHex ?? "",
+        vaultHandleHex: vaultHandleHex ?? "",
         publishSignature
       });
 
@@ -256,9 +322,17 @@ export function SellerWorkbench() {
           </div>
           <div className="page-intro__meta">
             <span className="badge badge--neutral">Connected wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
+            <span className="badge badge--neutral">Custody: {isArciumMode ? "Arcium configured" : "Browser demo"}</span>
           </div>
         </div>
       </section>
+
+      {isArciumPublishBlocked ? (
+        <div className="callout callout--info">
+          <strong>Arcium publish is unavailable</strong>
+          <span className="muted">{getArciumFrontendBlockMessage("publish")}</span>
+        </div>
+      ) : null}
 
       <div className="grid grid-2 marketplace-split">
         <div className="card surface">
@@ -319,7 +393,7 @@ export function SellerWorkbench() {
               />
             </label>
             <div className="row">
-              <button className="button" type="submit" disabled={busy || !file}>
+              <button className="button" type="submit" disabled={busy || !file || isArciumPublishBlocked}>
                 {busy ? "Publishing..." : "Publish listing"}
               </button>
             </div>

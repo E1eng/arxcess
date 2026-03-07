@@ -29,3 +29,4 @@ frontend/.env.production.local
 *.tsbuildinfo
 .DS_Store
 supabase
+context

@@ -5,6 +5,9 @@ use crate::errors::ArxcessError;
 use crate::state::ProductState;
 use crate::utils::copy_bytes_to_fixed;
 
+const PURCHASE_BASE_STATE_BYTES: usize = 1 + 32 + 32 + 32 + DELIVERY_PUBKEY_BYTES + 8 + 8 + 8 + 1 + 1 + 2 + SEALED_KEY_BOX_BYTES + CIPHERTEXT_CID_BYTES + 32 + 8 + 4 + 4 + 8 + 8 + 8;
+const ARCIUM_DELIVERY_CIPHERTEXT_COUNT: usize = 2;
+
 #[account]
 pub struct PurchaseState {
     pub bump: u8,
@@ -26,11 +29,17 @@ pub struct PurchaseState {
     pub max_access_count: u32,
     pub revoked_at: i64,
     pub created_at: i64,
-    pub delivered_at: i64
+    pub delivered_at: i64,
+    pub arcium_delivery_ready: bool,
+    pub arcium_evaluate_computation_offset: u64,
+    pub arcium_evaluate_requested_at: i64,
+    pub arcium_delivery_encryption_key: [u8; 32],
+    pub arcium_delivery_nonce: u128,
+    pub arcium_delivery_ciphertexts: [[u8; 32]; ARCIUM_DELIVERY_CIPHERTEXT_COUNT]
 }
 
 impl PurchaseState {
-    pub const SPACE: usize = 8 + 1 + 32 + 32 + 32 + DELIVERY_PUBKEY_BYTES + 8 + 8 + 8 + 1 + 1 + 2 + SEALED_KEY_BOX_BYTES + CIPHERTEXT_CID_BYTES + 32 + 8 + 4 + 4 + 8 + 8 + 8;
+    pub const SPACE: usize = 8 + PURCHASE_BASE_STATE_BYTES + 1 + 8 + 8 + 32 + 16 + (32 * ARCIUM_DELIVERY_CIPHERTEXT_COUNT);
 
     pub fn initialize(
         &mut self,
@@ -67,6 +76,12 @@ impl PurchaseState {
         self.revoked_at = 0;
         self.created_at = now;
         self.delivered_at = 0;
+        self.arcium_delivery_ready = false;
+        self.arcium_evaluate_computation_offset = 0;
+        self.arcium_evaluate_requested_at = 0;
+        self.arcium_delivery_encryption_key = [0u8; 32];
+        self.arcium_delivery_nonce = 0;
+        self.arcium_delivery_ciphertexts = [[0u8; 32]; ARCIUM_DELIVERY_CIPHERTEXT_COUNT];
         Ok(())
     }
 

@@ -10,6 +10,11 @@
     "build": "npm run build --workspace frontend",
     "build:contracts": "cargo build --manifest-path contracts/programs/arxcess/Cargo.toml",
     "build:anchor": "bash -lc 'cd contracts && anchor build --provider.cluster Devnet --provider.wallet ~/.config/solana/id.json'",
+    "check:arcium": "bash -lc 'which arcium && arcium --version'",
+    "build:arcium": "bash -lc 'cd /home/eleng/arxcess && arcium build'",
+    "init:arcium:comp-defs": "node ./scripts/init-arcium-comp-defs.mjs",
+    "test:arcium": "bash -lc 'cd /home/eleng/arxcess && arcium test --cluster devnet'",
+    "deploy:arcium:devnet": "bash -lc 'cd /home/eleng/arxcess && arcium deploy --cluster-offset 456 --recovery-set-size 4 --keypair-path ~/.config/solana/id.json -u d'",
     "lint": "npm run lint --workspace frontend",
     "typecheck": "npm run typecheck --workspace frontend"
   },

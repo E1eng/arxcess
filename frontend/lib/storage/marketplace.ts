@@ -13,6 +13,8 @@ export interface ListingAccessPolicy {
   revocable: boolean;
 }
 
+export type ListingCustodyMode = "browser_demo" | "arcium";
+
 export interface LocalProductListing {
   productIdHex: string;
   title: string;
@@ -28,6 +30,9 @@ export interface LocalProductListing {
   fileSizeBytes: number;
   sellerWallet: string | null;
   policy: ListingAccessPolicy;
+  custodyMode?: ListingCustodyMode;
+  vaultHandleHex?: string;
+  keyCommitmentHex?: string;
   createdAt: string;
   publishSignature?: string;
 }
@@ -49,6 +54,7 @@ export interface LocalPurchaseIntent {
   sealedKeyBoxBase64?: string;
   deliveryCommitmentHex?: string;
   deliveryMaterialDigestHex?: string;
+  deliveryMode?: ListingCustodyMode;
 }
 
 const PRODUCT_STORAGE_KEY = "arxcess.products";

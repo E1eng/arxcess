@@ -16,7 +16,7 @@ pub struct PurchaseProduct<'info> {
     #[account(mut)]
     pub treasury: SystemAccount<'info>,
     #[account(mut)]
-    pub product_state: Account<'info, ProductState>,
+    pub product_state: Box<Account<'info, ProductState>>,
     #[account(
         init,
         payer = buyer,
@@ -24,7 +24,7 @@ pub struct PurchaseProduct<'info> {
         bump,
         space = PurchaseState::SPACE
     )]
-    pub purchase_state: Account<'info, PurchaseState>,
+    pub purchase_state: Box<Account<'info, PurchaseState>>,
     pub system_program: Program<'info, System>
 }
 

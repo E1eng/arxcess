@@ -51,6 +51,9 @@ export interface DecodedProductState {
   maxAccessCount: number;
   revocable: boolean;
   totalSales: number;
+  arciumCustodyReady: boolean;
+  arciumDepositComputationOffset: number;
+  arciumDepositRequestedAt: number;
 }
 
 export interface DecodedPurchaseState {
@@ -65,6 +68,9 @@ export interface DecodedPurchaseState {
   revokedAt: number;
   createdAt: number;
   deliveredAt: number;
+  arciumDeliveryReady: boolean;
+  arciumEvaluateComputationOffset: number;
+  arciumEvaluateRequestedAt: number;
 }
 
 export function decodeProductState(data: Uint8Array): DecodedProductState {
@@ -80,6 +86,12 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
   const revocable = readU8(view, offset) === 1;
   offset += 1;
   const totalSales = readU64(view, offset);
+  offset += 8 + 8 + 8;
+  const arciumCustodyReady = readU8(view, offset) === 1;
+  offset += 1;
+  const arciumDepositComputationOffset = readU64(view, offset);
+  offset += 8;
+  const arciumDepositRequestedAt = readI64(view, offset);
 
   return {
     status,
@@ -87,7 +99,10 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
     licenseDurationSeconds,
     maxAccessCount,
     revocable,
-    totalSales
+    totalSales,
+    arciumCustodyReady,
+    arciumDepositComputationOffset,
+    arciumDepositRequestedAt
   };
 }
 
@@ -114,6 +129,12 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   const createdAt = readI64(view, offset);
   offset += 8;
   const deliveredAt = readI64(view, offset);
+  offset += 8;
+  const arciumDeliveryReady = readU8(view, offset) === 1;
+  offset += 1;
+  const arciumEvaluateComputationOffset = readU64(view, offset);
+  offset += 8;
+  const arciumEvaluateRequestedAt = readI64(view, offset);
 
   return {
     status,
@@ -126,7 +147,10 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
     maxAccessCount,
     revokedAt,
     createdAt,
-    deliveredAt
+    deliveredAt,
+    arciumDeliveryReady,
+    arciumEvaluateComputationOffset,
+    arciumEvaluateRequestedAt
   };
 }
 

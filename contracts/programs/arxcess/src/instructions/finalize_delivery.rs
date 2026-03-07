@@ -10,9 +10,9 @@ use crate::utils::copy_bytes_to_fixed;
 pub struct FinalizeDelivery<'info> {
     pub authority: Signer<'info>,
     #[account(address = purchase_state.product)]
-    pub product_state: Account<'info, ProductState>,
+    pub product_state: Box<Account<'info, ProductState>>,
     #[account(mut)]
-    pub purchase_state: Account<'info, PurchaseState>,
+    pub purchase_state: Box<Account<'info, PurchaseState>>,
 }
 
 pub fn handler(

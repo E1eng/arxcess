@@ -8,7 +8,7 @@ pub struct DepositProductKey<'info> {
     #[account(mut)]
     pub seller: Signer<'info>,
     #[account(mut, has_one = seller)]
-    pub product_state: Account<'info, ProductState>
+    pub product_state: Box<Account<'info, ProductState>>
 }
 
 pub fn handler(ctx: Context<DepositProductKey>, vault_handle: [u8; 32], key_commitment: [u8; 32]) -> Result<()> {

@@ -10,7 +10,7 @@ use crate::utils::is_zero_bytes;
 pub struct ActivateProduct<'info> {
     pub seller: Signer<'info>,
     #[account(mut, has_one = seller)]
-    pub product_state: Account<'info, ProductState>
+    pub product_state: Box<Account<'info, ProductState>>
 }
 
 pub fn handler(ctx: Context<ActivateProduct>) -> Result<()> {
@@ -19,7 +19,7 @@ pub fn handler(ctx: Context<ActivateProduct>) -> Result<()> {
         product_state.status == PRODUCT_STATUS_DRAFT || product_state.status == PRODUCT_STATUS_PAUSED,
         ArxcessError::InvalidProductStatus
     );
-    require!(!is_zero_bytes(&product_state.arcium_vault_handle), ArxcessError::MissingVaultHandle);
+    require!(product_state.arcium_custody_ready || !is_zero_bytes(&product_state.arcium_vault_handle), ArxcessError::MissingVaultHandle);
 
     product_state.status = PRODUCT_STATUS_ACTIVE;
     product_state.updated_at = Clock::get()?.unix_timestamp;

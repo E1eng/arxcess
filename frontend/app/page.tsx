@@ -8,14 +8,14 @@ export default function HomePage() {
         <div className="hero-grid">
           <div className="hero-copy">
             <span className="badge badge--neutral">Encrypted digital commerce on Solana</span>
-            <h1>Sell locked digital products with a simple buyer and seller flow.</h1>
-            <p className="subtitle">Publish a product, buy it with a wallet, then reveal it securely after delivery is ready.</p>
+            <h1>Launch premium digital products and unlock them securely after purchase.</h1>
+            <p className="subtitle">Explore products, launch your own listing, and open delivered purchases from one clean workspace.</p>
             <div className="row hero-actions">
-              <Link className="button" href="/seller">
-                Start selling
+              <Link className="button" href="/products">
+                Explore products
               </Link>
-              <Link className="button secondary" href="/products">
-                Browse products
+              <Link className="button secondary" href="/seller">
+                Launch a product
               </Link>
             </div>
             <div className="stat-grid">
@@ -43,25 +43,25 @@ export default function HomePage() {
             </div>
           </div>
           <div className="hero-panel">
-            <span className="badge">Simple flow</span>
+            <span className="badge">How it works</span>
             <h2 className="section-title">Three steps</h2>
             <div className="grid">
               <div className="step-item">
-                <strong>1. Publish</strong>
+                <strong>1. Launch</strong>
                 <span className="muted">Create a listing and upload the locked file.</span>
               </div>
               <div className="step-item">
-                <strong>2. Buy</strong>
-                <span className="muted">The buyer pays with a wallet.</span>
+                <strong>2. Purchase</strong>
+                <span className="muted">Someone pays with a wallet and the order is recorded on-chain.</span>
               </div>
               <div className="step-item">
                 <strong>3. Reveal</strong>
-                <span className="muted">After delivery is ready, the buyer reveals and downloads.</span>
+                <span className="muted">Once delivery is ready, the purchaser reveals and downloads the file.</span>
               </div>
             </div>
             <div className="callout">
-              <strong>Start anywhere</strong>
-              <span className="muted">Go to Seller to publish, Products to buy, or Purchases to open what you already own.</span>
+              <strong>Why home stays separate</strong>
+              <span className="muted">Home introduces the product. Explore is for browsing, Launch is for publishing, and Library is only useful after someone already owns something.</span>
             </div>
           </div>
         </div>
@@ -75,16 +75,16 @@ export default function HomePage() {
           </div>
           <div className="feature-grid">
             <div className="step-item">
-              <strong>Seller</strong>
+              <strong>Launch</strong>
               <span className="muted">Create and publish locked listings.</span>
             </div>
             <div className="step-item">
-              <strong>Products</strong>
-              <span className="muted">Browse and buy available products.</span>
+              <strong>Explore</strong>
+              <span className="muted">Browse and purchase available products.</span>
             </div>
             <div className="step-item">
-              <strong>Purchases</strong>
-              <span className="muted">Reveal and download what has been delivered.</span>
+              <strong>Library</strong>
+              <span className="muted">Open and download what has already been delivered.</span>
             </div>
           </div>
         </div>
@@ -95,14 +95,14 @@ export default function HomePage() {
             <p className="muted">No extra steps, no onboarding wall. Just go directly to the part you want to use.</p>
           </div>
           <div className="grid">
-            <Link className="button secondary" href="/seller">
-              Seller
-            </Link>
             <Link className="button secondary" href="/products">
-              Products
+              Explore
+            </Link>
+            <Link className="button secondary" href="/seller">
+              Launch
             </Link>
             <Link className="button secondary" href="/purchases">
-              Purchases
+              Library
             </Link>
           </div>
         </div>

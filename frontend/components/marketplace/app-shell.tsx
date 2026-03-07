@@ -11,9 +11,9 @@ const WalletMultiButton = dynamic(
 );
 
 const links = [
-  { href: "/seller", label: "Seller" },
-  { href: "/products", label: "Products" },
-  { href: "/purchases", label: "Purchases" }
+  { href: "/products", label: "Explore" },
+  { href: "/seller", label: "Launch" },
+  { href: "/purchases", label: "Library" }
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren) {

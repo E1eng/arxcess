@@ -17,8 +17,8 @@ export function ProductCatalog() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const { products } = useProducts();
-  const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-  const { ensureKeypair } = useDeliveryKeys(buyerWallet);
+  const connectedWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const { ensureKeypair } = useDeliveryKeys(connectedWallet);
   const [busyProductId, setBusyProductId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function ProductCatalog() {
 
     setBusyProductId(product.productIdHex);
     setError(null);
-    setStatusMessage("Preparing buyer delivery key...");
+    setStatusMessage("Preparing secure checkout...");
 
     try {
       const deliveryKeypair = ensureKeypair();
@@ -117,7 +117,7 @@ export function ProductCatalog() {
       const purchase: LocalPurchaseIntent = {
         purchaseIdHex,
         productIdHex: product.productIdHex,
-        buyerWallet,
+        buyerWallet: connectedWallet,
         buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64,
         amountSol: product.priceSol,
         status: "pending_seal",
@@ -134,7 +134,7 @@ export function ProductCatalog() {
         product,
         purchase
       });
-      setStatusMessage("Purchase confirmed. The asset will appear in Purchases while waiting for seller delivery.");
+      setStatusMessage("Purchase confirmed. The item will appear in Library until delivery is ready.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to execute on-chain purchase.");
       setStatusMessage(null);
@@ -148,12 +148,12 @@ export function ProductCatalog() {
       <section className="card surface page-intro">
         <div className="page-intro__top">
           <div>
-            <span className="eyebrow">Store</span>
-            <h2 className="section-title">Buy locked digital products</h2>
-            <p className="muted">Choose a product, pay with your wallet, and access it later from Purchases after delivery is ready.</p>
+            <span className="eyebrow">Explore</span>
+            <h2 className="section-title">Explore locked digital products</h2>
+            <p className="muted">Choose a product, complete checkout with your wallet, and open it later from Library.</p>
           </div>
           <div className="page-intro__meta">
-            <span className="badge badge--neutral">Buyer wallet: {buyerWallet ? truncateValue(buyerWallet, 12, 10) : "not connected"}</span>
+            <span className="badge badge--neutral">Connected wallet: {connectedWallet ? truncateValue(connectedWallet, 12, 10) : "not connected"}</span>
           </div>
         </div>
       </section>
@@ -168,7 +168,7 @@ export function ProductCatalog() {
       {products.length === 0 ? (
         <div className="card surface empty-state">
           <strong>No products are available yet.</strong>
-          <span className="muted">Publish a listing from the seller workspace after your storage and wallet environment are ready.</span>
+          <span className="muted">Launch a listing once your storage and wallet environment are ready.</span>
         </div>
       ) : (
         <div className="catalog-grid">
@@ -198,20 +198,20 @@ export function ProductCatalog() {
                 </div>
                 <div className="detail-list">
                   <div className="detail-row">
-                    <span className="muted">Seller</span>
+                    <span className="muted">Publisher</span>
                     <strong>{product.sellerWallet ? truncateValue(product.sellerWallet) : "not connected"}</strong>
                   </div>
                   <div className="detail-row">
-                    <span className="muted">License</span>
+                    <span className="muted">Access window</span>
                     <strong>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</strong>
                   </div>
                   <div className="detail-row">
-                    <span className="muted">Max reveals</span>
+                    <span className="muted">Reveal limit</span>
                     <strong>{product.policy.maxAccessCount}</strong>
                   </div>
                   <div className="detail-row">
-                    <span className="muted">On-chain sales</span>
-                    <strong>{onchain?.totalSales ?? 0}</strong>
+                    <span className="muted">Revocable</span>
+                    <strong>{product.policy.revocable ? "Yes" : "No"}</strong>
                   </div>
                 </div>
                 <div className="row">
@@ -228,8 +228,8 @@ export function ProductCatalog() {
       {prepared ? (
         <div className="callout callout--success">
           <div>
-            <strong>Purchase saved to Purchases</strong>
-            <span className="muted">{prepared.product.title} was paid successfully. Open Purchases to wait for delivery and reveal it later.</span>
+            <strong>Purchase saved to Library</strong>
+            <span className="muted">{prepared.product.title} was paid successfully. Open Library to wait for delivery and reveal it later.</span>
           </div>
         </div>
       ) : null}

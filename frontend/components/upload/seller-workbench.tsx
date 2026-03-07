@@ -250,12 +250,12 @@ export function SellerWorkbench() {
       <section className="card surface page-intro">
         <div className="page-intro__top">
           <div>
-            <span className="eyebrow">Seller</span>
-            <h2 className="section-title">Create a locked product listing</h2>
+            <span className="eyebrow">Launch</span>
+            <h2 className="section-title">Launch a locked product</h2>
             <p className="muted">Fill in the listing, upload the file, and publish.</p>
           </div>
           <div className="page-intro__meta">
-            <span className="badge badge--neutral">Seller wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
+            <span className="badge badge--neutral">Connected wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
           </div>
         </div>
       </section>
@@ -264,7 +264,7 @@ export function SellerWorkbench() {
         <div className="card surface">
           <div>
             <h2 className="section-title">Listing details</h2>
-            <p className="muted">Add the product info and the file buyers will unlock after purchase.</p>
+            <p className="muted">Add the product info and the file people unlock after purchase.</p>
           </div>
           <form className="grid" onSubmit={handleSubmit}>
             <label>
@@ -273,7 +273,7 @@ export function SellerWorkbench() {
             </label>
             <label>
               Description
-              <textarea name="description" required value={form.description} onChange={handleInputChange} placeholder="Explain what the buyer gets after unlock." />
+              <textarea name="description" required value={form.description} onChange={handleInputChange} placeholder="Explain what unlocks after purchase." />
             </label>
             <div className="grid grid-2">
               <label>
@@ -301,9 +301,12 @@ export function SellerWorkbench() {
                 <input name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" />
               </label>
             </div>
-            <label className="row">
+            <label className="checkbox-field">
               <input type="checkbox" name="revocable" checked={form.revocable} onChange={handleInputChange} />
-              <span>Seller can revoke access later</span>
+              <span>
+                <strong>Revocable access</strong>
+                <span className="muted">Allow this purchase to be revoked later.</span>
+              </span>
             </label>
             <label>
               Asset file
@@ -317,9 +320,8 @@ export function SellerWorkbench() {
             </label>
             <div className="row">
               <button className="button" type="submit" disabled={busy || !file}>
-                {busy ? "Publishing in progress..." : "Publish listing on-chain"}
+                {busy ? "Publishing..." : "Publish listing"}
               </button>
-              <span className="badge badge--neutral">Seller wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
             </div>
           </form>
           {statusMessage ? (
@@ -347,7 +349,7 @@ export function SellerWorkbench() {
                     <strong>{file ? file.name : "Upload a file to preview it here"}</strong>
                     <span className="muted">
                       {file
-                        ? "Preview is ready. Buyers will only receive the unlocked asset after purchase and delivery."
+                        ? "Preview is ready. The full file only unlocks after purchase and delivery."
                         : "Add a file to preview the locked product card before publishing."}
                     </span>
                   </div>
@@ -365,19 +367,15 @@ export function SellerWorkbench() {
               <strong>{form.category}</strong>
             </div>
             <div className="detail-row">
-              <span className="muted">Preview</span>
-              <strong>{previewMode === "image" ? "Image thumbnail ready" : file ? "File metadata ready" : "No asset selected"}</strong>
+              <span className="muted">File</span>
+              <strong>{selectedAssetLabel}</strong>
             </div>
             <div className="detail-row">
-              <span className="muted">Reveal mode</span>
-              <strong>Buyer reveals after delivery</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">License duration</span>
+              <span className="muted">Access window</span>
               <strong>{formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)}</strong>
             </div>
             <div className="detail-row">
-              <span className="muted">Max reveals</span>
+              <span className="muted">Reveal limit</span>
               <strong>{form.maxAccessCount}</strong>
             </div>
             <div className="detail-row">
@@ -392,7 +390,7 @@ export function SellerWorkbench() {
         <div className="callout callout--success">
           <div>
             <strong>Listing published</strong>
-            <span className="muted">{result.listing.title} is now live in the marketplace. When someone buys it, the purchase will appear in Purchases until delivery is ready.</span>
+            <span className="muted">{result.listing.title} is now live in Explore. New orders will show up in Library until delivery is ready.</span>
           </div>
         </div>
       ) : null}

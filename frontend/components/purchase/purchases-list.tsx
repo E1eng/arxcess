@@ -27,8 +27,8 @@ export function PurchasesList() {
   const { publicKey, sendTransaction } = useWallet();
   const { purchases, refreshPurchases } = usePurchases();
   const { products } = useProducts();
-  const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-  const { keypair } = useDeliveryKeys(buyerWallet);
+  const connectedWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const { keypair } = useDeliveryKeys(connectedWallet);
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -94,7 +94,7 @@ export function PurchasesList() {
     }
 
     if (!publicKey || !sendTransaction) {
-      setError("Connect the seller wallet before finalizing delivery.");
+      setError("Connect the publishing wallet before finalizing delivery.");
       return;
     }
 
@@ -104,14 +104,14 @@ export function PurchasesList() {
     }
 
     if (!product.sellerWallet || publicKey.toBase58() !== product.sellerWallet) {
-      setError("Finalize delivery must be signed by the seller wallet that published the listing.");
+      setError("Finalize delivery must be signed by the wallet that published this listing.");
       return;
     }
 
     const deliveryMaterial = getStoredSellerDeliveryMaterial(product.productIdHex);
 
     if (!deliveryMaterial) {
-      setError("Seller-side delivery material is missing in this browser. Publish and finalize from the same seller environment for this demo.");
+      setError("Delivery material is missing in this browser. Publish and finalize from the same environment for this demo.");
       return;
     }
 
@@ -200,7 +200,7 @@ export function PurchasesList() {
         deliveryMaterialDigestHex
       });
       refreshPurchases();
-      setStatusMessage("Delivery finalized successfully. The buyer can now reveal and download the asset from the library.");
+      setStatusMessage("Delivery finalized successfully. The purchaser can now reveal and download the asset from Library.");
     } catch (cause) {
       setStatusMessage(null);
       setError(cause instanceof Error ? cause.message : "Failed to finalize delivery.");
@@ -219,7 +219,7 @@ export function PurchasesList() {
     }
 
     if (!publicKey || !sendTransaction) {
-      setError("Connect the seller wallet before revoking access.");
+      setError("Connect the publishing wallet before revoking access.");
       return;
     }
 
@@ -229,7 +229,7 @@ export function PurchasesList() {
     }
 
     if (!product.sellerWallet || publicKey.toBase58() !== product.sellerWallet) {
-      setError("Revoke must be signed by the seller wallet that published the listing.");
+      setError("Revoke must be signed by the wallet that published this listing.");
       return;
     }
 
@@ -290,22 +290,22 @@ export function PurchasesList() {
     }
 
     if (!publicKey || !sendTransaction) {
-      setError("Connect the buyer wallet before revealing the asset.");
+      setError("Connect the purchase wallet before revealing the asset.");
       return;
     }
 
     if (purchase.buyerWallet && publicKey.toBase58() !== purchase.buyerWallet) {
-      setError("Reveal must be signed by the buyer wallet that purchased this asset.");
+      setError("Reveal must be signed by the wallet that purchased this item.");
       return;
     }
 
     if (!keypair) {
-      setError("Buyer delivery keypair is missing in this browser. Use the same browser profile that created the purchase, or import the original delivery keypair before revealing.");
+      setError("The access key for this purchase is missing in this browser. Use the same browser profile that created the purchase before revealing.");
       return;
     }
 
     if (keypair.publicKeyBase64 !== purchase.buyerDeliveryPublicKeyBase64) {
-      setError("The current buyer delivery keypair does not match this purchase. Restore the original delivery keypair used during checkout before revealing.");
+      setError("The current access key does not match this purchase. Restore the original key used during checkout before revealing.");
       return;
     }
 
@@ -500,12 +500,12 @@ export function PurchasesList() {
       <section className="card surface page-intro">
         <div className="page-intro__top">
           <div>
-            <span className="eyebrow">Purchases</span>
-            <h2 className="section-title">Your purchased products</h2>
-            <p className="muted">Wait for delivery, then reveal and download your asset from here.</p>
+            <span className="eyebrow">Library</span>
+            <h2 className="section-title">Open delivered purchases</h2>
+            <p className="muted">When delivery is ready, reveal and download your item from here.</p>
           </div>
           <div className="page-intro__meta">
-            <span className="badge badge--neutral">Buyer wallet: {buyerWallet ? truncateValue(buyerWallet, 12, 10) : "not connected"}</span>
+            <span className="badge badge--neutral">Connected wallet: {connectedWallet ? truncateValue(connectedWallet, 12, 10) : "not connected"}</span>
           </div>
         </div>
       </section>
@@ -518,22 +518,21 @@ export function PurchasesList() {
       ) : null}
 
       <div className="card surface">
-        <div className="title-with-action">
+        <div>
           <div>
             <h2 className="section-title">Library</h2>
             <p className="muted">Everything you bought appears here.</p>
           </div>
-          <button className="button secondary" type="button" onClick={resetLocalState}>
-            Reset demo data
-          </button>
         </div>
         {purchaseCards.length === 0 ? (
-          <span className="muted">No purchase intents prepared yet. Go to the catalog and start a checkout flow.</span>
+          <span className="muted">No purchases yet. Complete checkout from Explore to see items here.</span>
         ) : (
           <div className="catalog-grid">
             {purchaseCards.map(({ purchase, product }) => {
               const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
               const effectiveStatus = onchain?.statusLabel ?? purchase.status;
+              const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
+              const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
 
               return (
                 <div key={purchase.purchaseIdHex} className="card surface product-card">
@@ -551,7 +550,7 @@ export function PurchasesList() {
                           ? "Access was revoked."
                           : effectiveStatus === "delivered"
                             ? "Ready to reveal and download."
-                            : "Waiting for seller delivery."}
+                            : "Waiting for publisher delivery."}
                     </span>
                   </div>
                   <div className="detail-list">
@@ -560,7 +559,11 @@ export function PurchasesList() {
                       <strong>{purchase.amountSol} SOL</strong>
                     </div>
                     <div className="detail-row">
-                      <span className="muted">Access count</span>
+                      <span className="muted">Publisher</span>
+                      <strong>{product?.sellerWallet ? truncateValue(product.sellerWallet) : "Unknown"}</strong>
+                    </div>
+                    <div className="detail-row">
+                      <span className="muted">Access used</span>
                       <strong>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</strong>
                     </div>
                     <div className="detail-row">
@@ -568,21 +571,32 @@ export function PurchasesList() {
                       <strong>{formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "No expiry"}</strong>
                     </div>
                     <div className="detail-row">
-                      <span className="muted">Revoked</span>
-                      <strong>{formatOptionalDateTime(onchain?.revokedAt ? onchain.revokedAt * 1000 : purchase.revokedAt) ?? "Active"}</strong>
+                      <span className="muted">Revocable</span>
+                      <strong>{product?.policy.revocable ? "Yes" : "No"}</strong>
                     </div>
                   </div>
-                  <div className="row">
-                    <button className="button secondary" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "pending_seal"}>
-                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus !== "delivered" ? "Finalizing..." : "Finalize"}
-                    </button>
-                    <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus !== "delivered"}>
-                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "delivered" ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
-                    </button>
-                    <button className="button secondary" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex || effectiveStatus === "revoked" || !product?.policy.revocable}>
-                      {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "revoked" ? "Revoking..." : "Revoke access"}
-                    </button>
-                  </div>
+                  {isPublishingWallet || isPurchaseWallet ? (
+                    <div className="row">
+                      {isPublishingWallet && effectiveStatus === "pending_seal" ? (
+                        <button className="button secondary" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                          {busyPurchaseId === purchase.purchaseIdHex ? "Finalizing..." : "Finalize delivery"}
+                        </button>
+                      ) : null}
+                      {isPurchaseWallet && effectiveStatus === "delivered" ? (
+                        <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                          {busyPurchaseId === purchase.purchaseIdHex ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
+                        </button>
+                      ) : null}
+                      {isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable ? (
+                        <button className="button secondary" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                          {busyPurchaseId === purchase.purchaseIdHex ? "Revoking..." : "Revoke access"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!isPublishingWallet && !isPurchaseWallet ? (
+                    <span className="muted">Open this item with the publishing wallet to manage delivery, or with the purchase wallet to reveal it.</span>
+                  ) : null}
                 </div>
               );
             })}

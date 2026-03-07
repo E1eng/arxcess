@@ -6,9 +6,16 @@
 Arxcess is a trust-minimized digital asset marketplace for selling downloadable digital goods such as images, PDFs, templates, datasets, and source code. The marketplace is designed so that:
 
 - Creators can publish assets without handing plaintext files or encryption keys to the platform.
-- Buyers can purchase assets on Solana and receive decryption access only after payment succeeds.
+- Purchasers can buy assets on Solana and receive decryption access only after payment succeeds.
 - The platform UI can coordinate listing, purchase, and delivery, but it cannot read or steal the protected content.
 - Encryption key custody is delegated to Arcium's MPC network rather than a centralized backend.
+
+The current frontend presents this model through four focused surfaces:
+
+- `Home` for public product explanation and routing
+- `Explore` for browsing and checkout
+- `Launch` for publishing encrypted listings
+- `Library` for delivery, reveal, and download
 
 This design targets a **web-only** product experience:
 
@@ -22,32 +29,16 @@ No trusted application server is required for core purchase and delivery logic.
 
 ---
 
-## 2. Core Product Thesis
-
-Arxcess behaves like a trustless Web3 version of Gumroad:
-
-- Sellers upload a file from the browser.
-- The browser generates a symmetric content key locally.
-- The file is encrypted locally before leaving the browser.
-- Only ciphertext is uploaded to IPFS.
-- The content key is deposited into Arcium's MPC-controlled vault.
-- Buyers pay on-chain.
-- After payment and entitlement checks, Arcium re-seals the content key to the buyer's delivery public key.
-- The buyer decrypts the key and file locally in the browser.
-
-**Key security property:** the marketplace application never needs plaintext file access or centralized key custody.
-
----
-
 ## 3. Design Goals
 
 ### Primary Goals
 
 - Prevent the platform from viewing creators' paid content.
-- Support simple creator listing and buyer purchase flows from a browser only.
+- Support simple creator listing and purchaser checkout flows from a browser only.
 - Keep entitlement and payment verification on-chain.
 - Keep content encryption key material under MPC custody.
 - Make delivery auditable, deterministic, and programmable.
+- Keep the public product UX minimal by giving each page one primary job.
 
 ### Secondary Goals
 
@@ -57,7 +48,7 @@ Arxcess behaves like a trustless Web3 version of Gumroad:
 
 ### Non-Goals for V1
 
-- DRM-grade prevention of buyer redistribution after decryption.
+- DRM-grade prevention of purchaser redistribution after decryption.
 - Streaming/video segment key rotation.
 - Multi-recipient licensing trees.
 - Refund arbitration or chargeback workflows.
@@ -74,13 +65,14 @@ Arxcess behaves like a trustless Web3 version of Gumroad:
 Responsible for:
 
 - Wallet connection
+- Public navigation across `Home`, `Explore`, `Launch`, and `Library`
 - Product creation UI
 - Client-side AES key generation
 - Client-side file encryption/decryption
 - IPFS upload/download
 - Calling Anchor program instructions
 - Displaying purchased assets
-- Managing the buyer's delivery key pair locally
+- Managing the purchaser delivery key pair locally
 
 The frontend is **orchestration and UX only**. It must not become a trusted custodian.
 
@@ -105,8 +97,8 @@ Responsible for:
 
 - Receiving and storing the symmetric content key under MPC custody
 - Binding stored key material to a product identifier
-- Evaluating whether a buyer is entitled to receive access
-- Re-encrypting or sealing the content key for the buyer's delivery public key
+- Evaluating whether a purchaser is entitled to receive access
+- Re-encrypting or sealing the content key for the purchaser's delivery public key
 - Returning a sealed payload without exposing the raw key to the platform
 
 Arcium is the **confidential key control plane**.
@@ -117,19 +109,21 @@ Responsible for:
 
 - Storing ciphertext blobs
 - Storing optionally public metadata or preview assets
-- Serving content-addressed encrypted files to buyers after purchase
+- Serving content-addressed encrypted files to purchasers after purchase
 
 IPFS is the **durable content storage layer**, but only for ciphertext.
 
-### 5. Wallet + Buyer Delivery Keys
+### 5. Wallet + Purchaser Delivery Keys
 
 Responsible for:
 
 - Authorizing create/purchase transactions
-- Identifying buyer and seller accounts on Solana
+- Identifying purchaser and publisher accounts on Solana
 - Optionally binding a dedicated encryption public key to a purchase
 
-**Important architectural note:** a Solana wallet public key is not automatically suitable as a content-encryption recipient key. For delivery, Arxcess should use a **dedicated buyer delivery keypair** generated in-browser for encryption/decryption purposes.
+**Important architectural note:** a Solana wallet public key is not automatically suitable as a content-encryption recipient key. For delivery, Arxcess should use a **dedicated purchaser delivery key pair** generated in-browser for encryption/decryption purposes.
+
+**Current frontend behavior:** the delivery key pair is auto-generated in-browser when needed, so checkout does not require a separate manual key setup step.
 
 ---
 
@@ -153,7 +147,7 @@ Responsible for:
 - Description
 - Preview image or teaser
 - Price
-- Seller wallet
+- Publisher wallet
 - Ciphertext CID
 - Product metadata URI
 - Purchase status
@@ -163,114 +157,102 @@ Responsible for:
 
 - Raw content file before encryption
 - Raw AES content key
-- Buyer delivery private key
-- Buyer-decrypted file content
+- Purchaser delivery private key
+- Purchaser-decrypted file content
 
 ### Protected but Publicly Stored
 
 - Encrypted file ciphertext on IPFS
 - Sealed key payload written to on-chain state or emitted in events
 
-**Important distinction:** ciphertext and sealed key blobs may be publicly visible, but they must be unusable to anyone except the intended buyer.
-
----
-
-## 4.4 Recommended Cryptographic Pattern
-
-### Content Encryption
-
-- Use **AES-256-GCM** in the browser
-- Generate a random 32-byte content key per asset
-- Generate a unique random nonce/IV per encryption
-- Encrypt the file locally before upload
-
-### Delivery Encryption
-
-- The buyer generates a **delivery keypair** in the browser
-- The public half is submitted during purchase
-- Arcium seals the AES content key to that delivery public key
-- The buyer locally unseals it and decrypts the IPFS ciphertext
-
-### Why Not Use the Wallet Key Directly?
-
-Solana wallet keys are generally designed for signatures, not for safe browser-native content decryption workflows. A dedicated delivery keypair is cleaner, more portable, and easier to reason about.
+**Important distinction:** ciphertext and sealed key blobs may be publicly visible, but they must be unusable to anyone except the intended purchaser.
 
 ---
 
 ## 5. End-to-End Flows
 
-## 5.1 Seller Upload Flow
+## 5.1 Creator Launch Flow
 
 ### Summary
 
-1. Seller selects a file in the browser.
+1. Creator selects a file in the browser.
 2. Browser generates AES key and encrypts the file locally.
 3. Ciphertext is uploaded to Pinata/IPFS.
 4. Browser packages metadata and submits product creation to Solana.
 5. Browser also submits the encrypted key payload for Arcium deposit.
 6. Solana program records product state and associates the Arcium vault handle.
 
+In the current product UX, this flow is presented inside the `Launch` surface and emphasizes only essential listing terms such as price, access window, reveal limit, and revocable status.
+
 ### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Seller as Seller Browser
-    participant Wallet as Seller Wallet
+    participant Creator as Creator Browser
+    participant Wallet as Creator Wallet
     participant IPFS as Pinata/IPFS
     participant Program as Anchor Program
     participant Arcium as Arcium MPC
 
-    Seller->>Seller: Select file
-    Seller->>Seller: Generate AES-256 content key
-    Seller->>Seller: Encrypt file locally with AES-GCM
-    Seller->>IPFS: Upload ciphertext blob
-    IPFS-->>Seller: Return ciphertext CID
+    Creator->>Creator: Select file
+    Creator->>Creator: Generate AES-256 content key
+    Creator->>Creator: Encrypt file locally with AES-GCM
+    Creator->>IPFS: Upload ciphertext blob
+    IPFS-->>Creator: Return ciphertext CID
 
-    Seller->>Seller: Build product metadata
-    Seller->>Seller: Encrypt/prepare content key for Arcium ingress
-    Seller->>Wallet: Sign create_product transaction
+    Creator->>Creator: Build product metadata
+    Creator->>Creator: Encrypt/prepare content key for Arcium ingress
+    Creator->>Wallet: Sign create_product transaction
     Wallet->>Program: create_product(metadata_uri, ciphertext_cid, price, fee_bps, hashes)
 
-    Program-->>Seller: Product PDA created
+    Program-->>Creator: Product PDA created
 
-    Seller->>Wallet: Sign deposit_key transaction
+    Creator->>Wallet: Sign deposit_key transaction
     Wallet->>Program: deposit_product_key(product_id, encrypted_key_payload, commitments)
     Program->>Arcium: CPI/request to store key in MPC vault
     Arcium-->>Program: vault_handle / key commitment
-    Program-->>Seller: Product updated with vault reference
+    Program-->>Creator: Product updated with vault reference
 
-    Seller-->>Seller: Listing becomes active
+    Creator-->>Creator: Listing becomes active
 ```
 
 ---
 
-## 5.2 Buyer Purchase + Key Delivery + Decryption Flow
+## 5.2 Purchase + Delivery + Reveal Flow
 
 ### Summary
 
-1. Buyer opens product page and sees public metadata.
-2. Buyer generates or retrieves a local delivery keypair.
-3. Buyer pays through Solana.
+1. A purchaser opens `Explore` and sees public metadata.
+2. The browser generates or retrieves a local delivery key pair.
+3. The connected wallet pays through Solana.
 4. Program settles seller payout and protocol fee, then marks purchase as eligible.
-5. Program triggers Arcium to evaluate entitlement and seal the content key to the buyer.
-6. Buyer frontend fetches the sealed key and ciphertext.
-7. Buyer decrypts locally.
+5. The delivery flow produces a sealed payload for the purchaser delivery key.
+6. The `Library` surface shows the purchase in `pending_seal` until delivery is finalized.
+7. The publishing wallet finalizes delivery.
+8. The purchasing wallet reveals and decrypts locally.
+
+### Current Frontend Action Model
+
+- `Finalize delivery` is shown only to the wallet that published the listing.
+- `Reveal & download` is shown only to the wallet that created the purchase.
+- `Revoke access` is shown only to the publishing wallet, and only when the listing policy is revocable.
+- Wallets that do not match either role can still inspect purchase state, but they cannot trigger those actions from the UI.
 
 ### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Buyer as Buyer Browser
-    participant Wallet as Buyer Wallet
+    participant Purchaser as Purchaser Browser
+    participant Wallet as Purchaser Wallet
     participant Program as Anchor Program
     participant Arcium as Arcium MPC
     participant IPFS as Pinata/IPFS
 
-    Buyer->>Buyer: Generate/load buyer delivery keypair
-    Buyer->>Wallet: Sign purchase transaction
-    Wallet->>Program: purchase_product(product_id, buyer_delivery_pubkey)
+    Purchaser->>Purchaser: Generate/load purchaser delivery key pair
+    Purchaser->>Wallet: Sign purchase transaction
+    Wallet->>Program: purchase_product(product_id, purchaser_delivery_pubkey)
 
     Program->>Program: Verify product is active
     Program->>Program: Verify exact payment
@@ -279,20 +261,20 @@ sequenceDiagram
     Program->>Program: Transfer protocol fee
     Program->>Program: Create PurchaseState(status = PendingSeal)
 
-    Program->>Arcium: request evaluate_and_seal(product_id, purchase_id, buyer_delivery_pubkey, entitlement inputs)
+    Program->>Arcium: request evaluate_and_seal(product_id, purchase_id, purchaser_delivery_pubkey, entitlement inputs)
     Arcium->>Arcium: Evaluate purchase validity branchlessly
-    Arcium->>Arcium: Seal AES key for buyer delivery pubkey
+    Arcium->>Arcium: Seal AES key for purchaser delivery pubkey
     Arcium-->>Program: sealed_key_box, approval_flag
 
     Program->>Program: Update PurchaseState(status = Delivered)
-    Program-->>Buyer: Purchase account now contains sealed delivery payload
+    Program-->>Purchaser: Purchase account now contains sealed delivery payload
 
-    Buyer->>Program: Read PurchaseState
-    Buyer->>IPFS: Fetch ciphertext via CID
-    IPFS-->>Buyer: Return encrypted file bytes
-    Buyer->>Buyer: Unseal AES key locally
-    Buyer->>Buyer: Decrypt ciphertext locally
-    Buyer-->>Buyer: View or download plaintext file
+    Purchaser->>Program: Read PurchaseState
+    Purchaser->>IPFS: Fetch ciphertext via CID
+    IPFS-->>Purchaser: Return encrypted file bytes
+    Purchaser->>Purchaser: Unseal AES key locally
+    Purchaser->>Purchaser: Decrypt ciphertext locally
+    Purchaser-->>Purchaser: View or download plaintext file
 ```
 
 ---
@@ -329,7 +311,7 @@ ProductState
 - ciphertext_cid: String/fixed bytes
 - preview_cid: String/fixed bytes (optional)
 - file_mime_commitment: [u8; 32]
-- plaintext_hash_commitment: [u8; 32]   // optional if seller wants buyer verifiability
+- plaintext_hash_commitment: [u8; 32]   // optional if the seller wants purchaser verifiability
 - ciphertext_hash: [u8; 32]
 - file_size_bytes: u64
 - arcium_vault_handle: [u8; 32]
@@ -345,12 +327,13 @@ ProductState
 - `ciphertext_cid` points to the encrypted file, not plaintext.
 - `arcium_vault_handle` is the on-chain reference to MPC-controlled content key storage.
 - `key_commitment` is useful for integrity binding between the product and deposited key.
+- Public-facing product copy may call the `seller` a `publisher`, but the underlying account model still uses `seller` internally.
 
 ---
 
 ## 6.2 Purchase Model
 
-A purchase records buyer entitlement and delivery status for one buyer-product pair or one unique transaction.
+A purchase records purchaser entitlement and delivery status for one purchaser-product pair or one unique transaction.
 
 ### PurchaseState Purpose
 
@@ -396,12 +379,13 @@ PurchaseState
 
 - `sealed_key_box` should use a **fixed-size byte array** for deterministic account sizing.
 - `ciphertext_cid_snapshot` prevents ambiguity if a seller later updates metadata.
-- `delivery_commitment` can bind the sealed response to the purchase and buyer.
+- `delivery_commitment` can bind the sealed response to the purchase and purchaser.
+- Public-facing product copy may call the `buyer` a `purchaser`, but the underlying account model still uses `buyer` internally.
 
 ### Recommended V1 Status Flow
 
 - `active product`
-- buyer pays
+- purchaser pays
 - `PurchaseState.status = pending_seal`
 - Arcium response arrives
 - `PurchaseState.status = delivered`
@@ -504,7 +488,7 @@ Store a seller's content key under Arcium MPC custody and bind it to a product.
 
 ### Purpose
 
-Verify that a buyer is entitled to access a product's content key and then seal that key to the buyer's delivery public key.
+Verify that a purchaser is entitled to access a product's content key and then seal that key to the purchaser's delivery public key.
 
 ### Conceptual Inputs
 
@@ -512,8 +496,8 @@ Verify that a buyer is entitled to access a product's content key and then seal 
 
 - `product_id: [u8; 32]`
 - `purchase_id: [u8; 32]`
-- `buyer_pubkey: [u8; 32]`
-- `buyer_delivery_pubkey: [u8; 32]` or `[u8; 64]`
+- `purchaser_pubkey: [u8; 32]`
+- `purchaser_delivery_pubkey: [u8; 32]` or `[u8; 64]`
 - `payment_verified: u8`
 - `product_active: u8`
 - `purchase_not_revoked: u8`
@@ -552,8 +536,8 @@ valid_purchase =
     AND purchase_not_revoked
     AND delivery_not_yet_finalized
 
-sealed_real_key = seal(content_key, buyer_delivery_pubkey)
-sealed_zero_key = seal(ZERO_32_BYTES, buyer_delivery_pubkey)
+sealed_real_key = seal(content_key, purchaser_delivery_pubkey)
+sealed_zero_key = seal(ZERO_32_BYTES, purchaser_delivery_pubkey)
 
 sealed_key_box = select(valid_purchase, sealed_real_key, sealed_zero_key)
 approval_flag = valid_purchase
@@ -561,8 +545,8 @@ approval_flag = valid_purchase
 delivery_commitment = hash(
     product_id,
     purchase_id,
-    buyer_pubkey,
-    buyer_delivery_pubkey,
+    purchaser_pubkey,
+    purchaser_delivery_pubkey,
     approval_flag,
     sealed_key_box
 )
@@ -595,7 +579,7 @@ For predictable circuit behavior, use fixed-width structures such as:
 - `purchase_id: [u8; 32]`
 - `content_key: [u8; 32]`
 - `ciphertext_hash: [u8; 32]`
-- `buyer_delivery_pubkey: [u8; 32]` or `[u8; 64]`
+- `purchaser_delivery_pubkey: [u8; 32]` or `[u8; 64]`
 - `sealed_key_box: [u8; 192]` or `[u8; 256]`
 
 All string-like values such as CIDs should be hashed before passing into circuits unless there is a strong reason to pass fixed-length ASCII buffers.
@@ -604,7 +588,7 @@ All string-like values such as CIDs should be hashed before passing into circuit
 
 ## 8. Protocol Logic
 
-## 8.1 Seller Listing Lifecycle
+## 8.1 Publisher Listing Lifecycle
 
 ### `create_product`
 
@@ -620,16 +604,16 @@ Marks the listing as sellable after both metadata and vault handle are present.
 
 ### `pause_or_delist_product`
 
-Lets the seller stop future purchases without deleting historical purchases.
+Lets the publisher stop future purchases without deleting historical purchases.
 
 ---
 
-## 8.2 Buyer Purchase Lifecycle
+## 8.2 Purchaser Purchase Lifecycle
 
 ### `purchase_product`
 
 - verifies product is active
-- verifies buyer sent exact payment
+- verifies purchaser sent exact payment
 - calculates protocol fee
 - transfers fee to protocol treasury
 - transfers seller proceeds
@@ -645,7 +629,7 @@ Depending on Arcium integration style, this may be:
 
 ### `claim_content`
 
-In the simplest design, this is not a separate instruction. The buyer simply reads the `PurchaseState` account and decrypts locally.
+In the simplest design, this is not a separate instruction. The purchaser simply reads the `PurchaseState` account and decrypts locally.
 
 ---
 
@@ -682,16 +666,16 @@ seller_proceeds = amount_paid - protocol_fee
 
 ## 9.2 What the Platform Cannot See
 
-- Plaintext file after seller encryption
+- Plaintext file after publisher encryption
 - Raw AES content key after Arcium deposit
-- Buyer delivery private key
-- Buyer plaintext after local decryption
+- Purchaser delivery private key
+- Purchaser plaintext after local decryption
 
 ## 9.3 Residual Risks
 
-### Buyer Redistribution Risk
+### Purchaser Redistribution Risk
 
-Any buyer who decrypts a file can re-share it. This architecture prevents platform theft, not end-user redistribution.
+Any purchaser who decrypts a file can re-share it. This architecture prevents platform theft, not end-user redistribution.
 
 ### Frontend Supply Chain Risk
 
@@ -709,7 +693,7 @@ A truly web-only architecture has a tradeoff around client-side Pinata upload au
 
 ### Delivery Key Loss
 
-If a buyer loses the local delivery private key, they may lose decryption ability on that device. A recovery UX should be designed later.
+If a purchaser loses the local delivery private key, they may lose decryption ability on that device. A recovery UX should be designed later.
 
 ---
 
@@ -821,7 +805,7 @@ Responsible for:
 - AES key generation
 - file encryption
 - file decryption
-- delivery key generation
+- purchaser delivery key generation
 - sealed key unwrapping helpers
 
 ### `lib/ipfs`
@@ -881,8 +865,8 @@ Stops future sales.
 The marketplace UI will eventually need indexed queries such as:
 
 - list all active products
-- list all products by seller
-- list all purchases by buyer
+- list all products by publisher
+- list all purchases by purchaser
 - list newly delivered purchases
 
 For the MVP:
@@ -905,7 +889,13 @@ Depending on Arcium integration latency, delivery may not finalize in the same t
 - Arcium response arrives
 - `finalize_delivery` => `delivered`
 
-The buyer frontend should poll or subscribe for `PurchaseState.status == delivered`.
+The purchaser-facing `Library` surface should poll or subscribe for `PurchaseState.status == delivered`.
+
+In the current frontend UX:
+
+- the publishing wallet performs finalize when needed
+- the purchasing wallet performs reveal after delivery is ready
+- revoke is only exposed when the listing policy allows it
 
 ---
 
@@ -956,7 +946,7 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 
 - Implement AES-256-GCM file encryption in browser
 - Implement file decryption in browser
-- Implement buyer delivery key generation and storage
+- Implement purchaser delivery key generation and storage
 - Implement content hashing and metadata commitment helpers
 
 ### Deliverable
@@ -974,7 +964,7 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 
 ### Deliverable
 
-- Seller can create encrypted asset package and receive deterministic IPFS references
+- Publisher can create encrypted asset package and receive deterministic IPFS references
 
 ---
 
@@ -984,12 +974,12 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 - Implement `create_product`
 - Implement `activate_product`
 - Implement `pause_product`
-- Add seller authorization and status checks
+- Add publisher authorization and status checks
 - Add events for product creation and updates
 
 ### Deliverable
 
-- Sellers can create public listings on-chain
+- Publishers can create public listings on-chain
 
 ---
 
@@ -1013,12 +1003,12 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 - Enforce exact payment amount
 - Compute and transfer protocol fee
 - Transfer seller proceeds
-- Store buyer delivery public key
+- Store purchaser delivery public key
 - Initialize purchase status to `pending_seal`
 
 ### Deliverable
 
-- Buyer payment is finalized on-chain with auditable fee accounting
+- Purchaser payment is finalized on-chain with auditable fee accounting
 
 ---
 
@@ -1032,15 +1022,15 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 
 ### Deliverable
 
-- Buyers receive sealed content keys after valid payment
+- Purchasers receive sealed content keys after valid payment
 
 ---
 
-## Phase 8: Buyer Decryption UX
+## Phase 8: Library Reveal UX
 
-- Build purchase history page
+- Build library page
 - Fetch `PurchaseState`
-- Unseal the buyer's content key locally
+- Unseal the purchaser's content key locally
 - Download ciphertext from IPFS
 - Decrypt locally for preview/download
 
@@ -1054,7 +1044,7 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 
 - Unit test fee math and entitlement logic
 - Integration test product creation and purchase flow
-- E2E test seller upload to buyer decryption
+- E2E test creator upload to purchaser decryption
 - Adversarial test invalid purchases and repeated delivery attempts
 - Audit account size calculations and replay protections
 - Validate MPC constraints in both circuits
@@ -1070,7 +1060,7 @@ For V1, storing the sealed blob in `PurchaseState` is the simplest design.
 - Deploy program to Solana devnet
 - Configure frontend for devnet RPC
 - Seed sample products
-- Add buyer and seller dashboards
+- Refine Explore, Launch, and Library surfaces
 - Add preview UX and error states
 - Add explorer and IPFS links for transparency
 
@@ -1112,7 +1102,7 @@ This scope is sufficient to demonstrate:
 - trust-minimized encrypted commerce
 - on-chain entitlement
 - MPC-controlled key release
-- fully web-based buyer delivery
+- fully web-based purchaser delivery
 
 ---
 
@@ -1141,8 +1131,8 @@ For the hackathon build, Arxcess should optimize for a simple but credible trust
 - Store ciphertext on IPFS
 - Store content keys in Arcium MPC
 - Enforce payment and fee logic on Solana
-- Seal keys only to paying buyers
-- Decrypt only in the buyer's browser
+- Seal keys only to paying purchasers
+- Decrypt only in the purchaser's browser
 
 This architecture is strong because each layer has a narrow job:
 

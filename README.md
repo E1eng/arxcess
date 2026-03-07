@@ -2,17 +2,24 @@
 
 Arxcess is a monorepo for a web-first encrypted digital goods marketplace prototype built around Solana, Anchor, and a browser-based encryption flow.
 
-The current prototype focuses on three core user journeys:
+The current prototype focuses on a simple public product structure:
 
-- Sellers encrypt files in the browser before upload.
+- `Home` explains the product and directs people to the right workflow.
+- `Explore` lists encrypted products that can be purchased from a connected wallet.
+- `Launch` lets creators publish locked products from the browser.
+- `Library` holds purchased items and exposes role-aware delivery actions.
+
+At a system level, the prototype currently demonstrates these core journeys:
+
+- Creators encrypt files in the browser before upload.
 - Encrypted assets and metadata are stored through Pinata/IPFS.
-- Buyers prepare delivery keys and purchase payloads for later on-chain settlement and secure key delivery.
+- Purchasers buy on Solana and receive decryption access only after delivery is finalized.
 
 ## Repository structure
 
 ```text
 .
-├── frontend/           # Next.js app for seller, catalog, and purchases flows
+├── frontend/           # Next.js app for Home, Explore, Launch, and Library flows
 ├── sdk/ts/             # Shared TypeScript SDK package
 ├── contracts/          # Anchor workspace and Solana program config
 ├── encrypted-ixs/      # Rust workspace member for encrypted instruction-related logic
@@ -132,11 +139,15 @@ Do not commit local env files.
 
 ### Home
 
-The landing page explains the encrypted marketplace model and links to the main prototype flows.
+The landing page introduces the encrypted marketplace model and routes users into the correct public workflow:
 
-### Seller
+- `Explore` for browsing and checkout
+- `Launch` for publishing a locked product
+- `Library` for opening delivered purchases
 
-The seller workbench:
+### Launch
+
+The launch workspace:
 
 - collects listing metadata
 - encrypts the chosen file in the browser
@@ -144,18 +155,24 @@ The seller workbench:
 - uploads metadata JSON
 - asks the wallet to sign a Devnet publish transaction that creates, deposits, and activates the product on-chain
 - stores the resulting listing locally and optionally in Supabase
+- shows only essential listing terms such as price, access window, reveal limit, and revocable status
 
-### Products / Catalog
+### Explore
 
-The product catalog reads the stored listings and presents a storefront-style checkout preview. Buying now sends the on-chain `purchase_product` transaction from the connected wallet.
-- prepares buyer purchase payloads
-- stores prepared purchase intents locally
+The explore page reads stored listings and presents a minimal storefront. Buying sends the on-chain `purchase_product` transaction from the connected wallet.
 
-### Purchases
+- auto-generates or reuses the purchaser delivery key in-browser
+- stores purchase intents locally after checkout succeeds
+- highlights only essential public listing details such as publisher, price, access window, reveal limit, and revocable status
 
-The purchases page is a buyer-side library/reveal hub placeholder backed by local browser state. After the purchase transaction succeeds, entries move into `pending_seal` until delivery finalization is implemented.
-- lists prepared purchase intents
-- shows the next payloads for future on-chain integration
+### Library
+
+The library page is the reveal hub backed by local browser state plus on-chain purchase status. After checkout succeeds, entries move into `pending_seal` until delivery is finalized.
+
+- shows purchased items with delivery status
+- shows `Finalize delivery` only to the wallet that published the listing
+- shows `Reveal & download` only to the wallet that created the purchase
+- shows `Revoke access` only to the publishing wallet when the listing is revocable
 
 ## Contracts
 
@@ -177,7 +194,8 @@ Make sure your Solana and Anchor toolchains are installed and configured first.
 ## Development notes
 
 - The frontend is the fastest place to iterate on UX and flow validation.
-- The app currently relies on browser-local state for listings, purchases, and delivery keys.
+- The app currently relies on browser-local state for listings, purchases, and delivery keys, with optional shared listing sync through Supabase.
+- The purchaser delivery key is auto-generated in-browser when needed, so checkout does not require a separate manual setup step.
 - On-chain enforcement and Arcium-oriented delivery are represented as prototype-ready payload preparation, not a fully deployed production flow yet.
 
 ## Git hygiene
@@ -195,10 +213,11 @@ The repository ignores common generated artifacts such as:
 1. Configure `frontend/.env.local`
 2. Run `npm run dev`
 3. Connect a wallet
-4. Create a seller listing
-5. Review it in the product catalog
-6. Prepare a purchase payload
-7. Inspect delivery keys and prepared purchases
+4. Open `Launch` and publish a listing
+5. Review it in `Explore`
+6. Purchase it from a second wallet
+7. Open `Library` with the publishing wallet to finalize delivery if needed
+8. Open `Library` with the purchasing wallet to reveal and download
 
 ## License
 

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId } from "@arxcess/sdk";
+import { InfoButton, OverlayDialog } from "@/components/ui/overlay-dialog";
+import { NoticeToast } from "@/components/ui/notice-toast";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { useProducts } from "@/hooks/use-products";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
@@ -10,6 +12,7 @@ import { fetchOnchainProductStates, type DecodedProductState } from "@/lib/solan
 import { buildPurchaseTransaction } from "@/lib/solana/arxcess";
 import { type LocalProductListing, type LocalPurchaseIntent, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { solToLamports } from "@/lib/solana/amounts";
+import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 
 function truncateValue(value: string, head = 12, tail = 6) {
   if (value.length <= head + tail + 3) {
@@ -35,11 +38,14 @@ export function ProductCatalog() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const { products } = useProducts();
-  const { ensureKeypair } = useDeliveryKeys();
+  const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const { ensureKeypair } = useDeliveryKeys(buyerWallet);
   const [selectedProduct, setSelectedProduct] = useState<LocalProductListing | null>(null);
   const [busyProductId, setBusyProductId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
+  const [isFlowDialogOpen, setIsFlowDialogOpen] = useState(false);
   const [prepared, setPrepared] = useState<
     | {
         product: LocalProductListing;
@@ -48,8 +54,6 @@ export function ProductCatalog() {
       }
     | null
   >(null);
-  const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-
   useEffect(() => {
     let ignore = false;
 
@@ -100,10 +104,12 @@ export function ProductCatalog() {
 
     setBusyProductId(product.productIdHex);
     setError(null);
+    setStatusMessage("Preparing buyer delivery key...");
 
     try {
       const deliveryKeypair = ensureKeypair();
       const purchaseIdHex = randomHexId();
+      setStatusMessage("Building purchase transaction...");
       const { transaction } = await buildPurchaseTransaction({
         buyer: publicKey,
         listing: product,
@@ -114,16 +120,17 @@ export function ProductCatalog() {
 
       transaction.recentBlockhash = latestBlockhash.blockhash;
 
+      setStatusMessage("Waiting for wallet approval to pay on-chain...");
       const transactionSignature = await sendTransaction(transaction, connection);
 
-      await connection.confirmTransaction(
-        {
-          signature: transactionSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-        },
-        "confirmed"
-      );
+      setStatusMessage("Payment sent. Waiting for on-chain confirmation...");
+      await confirmTransactionOrThrow({
+        connection,
+        signature: transactionSignature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        label: "Purchase"
+      });
 
       const createdAt = new Date();
       const expiresAt =
@@ -152,8 +159,10 @@ export function ProductCatalog() {
         amountLamports: solToLamports(product.priceSol).toString()
       });
       setSelectedProduct(product);
+      setStatusMessage("Purchase confirmed. Waiting for seller to finalize delivery.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to execute on-chain purchase.");
+      setStatusMessage(null);
     } finally {
       setBusyProductId(null);
     }
@@ -163,11 +172,14 @@ export function ProductCatalog() {
     <div className="grid">
       <div className="card">
         <div>
-          <h2 className="section-title">Catalog</h2>
-          <p className="muted">Browse locked products like a storefront. The buyer should feel a checkout flow first, then an unlock flow after payment and sealed delivery.</p>
+          <div className="title-with-action">
+            <h2 className="section-title">Catalog</h2>
+            <InfoButton label="View buyer flow details" onClick={() => setIsFlowDialogOpen(true)} />
+          </div>
+          <p className="muted">Browse locked products like a storefront.</p>
         </div>
         <span className="badge">Buyer wallet: {buyerWallet ?? "not connected"}</span>
-        {error ? <span className="badge">{error}</span> : null}
+        {statusMessage ? <span className="badge">{statusMessage}</span> : null}
       </div>
       {products.length === 0 ? (
         <div className="card">
@@ -282,19 +294,11 @@ export function ProductCatalog() {
                 <span className="muted">Product state</span>
                 <strong>{onchainProductStates[selectedProduct.productIdHex]?.statusLabel ?? "unknown"}</strong>
               </div>
-            </div>
-            <div className="timeline">
-              <div className="timeline-item done">
-                <strong>1. Inspect listing</strong>
-                <span className="muted">Buyer sees the preview, price, and what unlocks after payment.</span>
-              </div>
-              <div className="timeline-item active">
-                <strong>2. Confirm checkout</strong>
-                <span className="muted">Buy on-chain opens the wallet and sends the `purchase_product` transaction.</span>
-              </div>
-              <div className="timeline-item">
-                <strong>3. Reveal asset later</strong>
-                <span className="muted">The purchases page should become the reveal hub once delivery is complete.</span>
+              <div className="detail-row">
+                <span className="muted">Flow</span>
+                <strong>
+                  <InfoButton label="View checkout flow details" onClick={() => setIsFlowDialogOpen(true)} />
+                </strong>
               </div>
             </div>
           </div>
@@ -375,6 +379,12 @@ export function ProductCatalog() {
           </div>
         </div>
       ) : null}
+      <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
+      <OverlayDialog open={isFlowDialogOpen} title="Buyer flow" onClose={() => setIsFlowDialogOpen(false)}>
+        <span>1. Buyer selects a locked listing and pays on-chain.</span>
+        <span>2. The purchase waits for the seller to finalize sealed delivery.</span>
+        <span>3. After delivery is finalized, the buyer reveals from the library using the same browser delivery keypair used at checkout.</span>
+      </OverlayDialog>
     </div>
   );
 }

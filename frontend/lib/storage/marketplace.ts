@@ -3,6 +3,8 @@ import { DeliveryKeypair } from "@/lib/crypto/delivery";
 export interface SellerDeliveryMaterial {
   contentKeyBase64: string;
   ivBase64: string;
+  ciphertextHashHex?: string;
+  keyCommitmentHex?: string;
 }
 
 export interface ListingAccessPolicy {
@@ -46,11 +48,12 @@ export interface LocalPurchaseIntent {
   finalizeSignature?: string;
   sealedKeyBoxBase64?: string;
   deliveryCommitmentHex?: string;
+  deliveryMaterialDigestHex?: string;
 }
 
 const PRODUCT_STORAGE_KEY = "arxcess.products";
 const PURCHASE_STORAGE_KEY = "arxcess.purchases";
-const DELIVERY_KEY_STORAGE_KEY = "arxcess.delivery-keypair";
+const DELIVERY_KEY_STORAGE_KEY = "arxcess.delivery-keypairs";
 const SELLER_DELIVERY_STORAGE_KEY = "arxcess.seller-delivery-material";
 
 function readJson<T>(key: string, fallback: T): T {
@@ -84,17 +87,34 @@ export function listStoredPurchases(): LocalPurchaseIntent[] {
   return readJson<LocalPurchaseIntent[]>(PURCHASE_STORAGE_KEY, []);
 }
 
+export function getStoredPurchase(purchaseIdHex: string): LocalPurchaseIntent | null {
+  return listStoredPurchases().find((entry) => entry.purchaseIdHex === purchaseIdHex) ?? null;
+}
+
 export function saveStoredPurchase(purchase: LocalPurchaseIntent) {
   const current = listStoredPurchases();
   writeJson(PURCHASE_STORAGE_KEY, [purchase, ...current.filter((entry) => entry.purchaseIdHex !== purchase.purchaseIdHex)]);
 }
 
-export function getStoredDeliveryKeypair(): DeliveryKeypair | null {
-  return readJson<DeliveryKeypair | null>(DELIVERY_KEY_STORAGE_KEY, null);
+export function getStoredDeliveryKeypair(wallet: string | null): DeliveryKeypair | null {
+  if (!wallet) {
+    return null;
+  }
+
+  const keypairs = readJson<Record<string, DeliveryKeypair>>(DELIVERY_KEY_STORAGE_KEY, {});
+  return keypairs[wallet] ?? null;
 }
 
-export function saveStoredDeliveryKeypair(keypair: DeliveryKeypair) {
-  writeJson(DELIVERY_KEY_STORAGE_KEY, keypair);
+export function saveStoredDeliveryKeypair(wallet: string | null, keypair: DeliveryKeypair) {
+  if (!wallet) {
+    return;
+  }
+
+  const keypairs = readJson<Record<string, DeliveryKeypair>>(DELIVERY_KEY_STORAGE_KEY, {});
+  writeJson(DELIVERY_KEY_STORAGE_KEY, {
+    ...keypairs,
+    [wallet]: keypair
+  });
 }
 
 export function getStoredSellerDeliveryMaterial(productIdHex: string): SellerDeliveryMaterial | null {
@@ -108,4 +128,15 @@ export function saveStoredSellerDeliveryMaterial(productIdHex: string, material:
     ...materials,
     [productIdHex]: material
   });
+}
+
+export function clearStoredMarketplaceState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(PRODUCT_STORAGE_KEY);
+  window.localStorage.removeItem(PURCHASE_STORAGE_KEY);
+  window.localStorage.removeItem(DELIVERY_KEY_STORAGE_KEY);
+  window.localStorage.removeItem(SELLER_DELIVERY_STORAGE_KEY);
 }

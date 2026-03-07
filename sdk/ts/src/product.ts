@@ -6,6 +6,7 @@ export interface ProductMetadata {
   category: string;
   previewCid?: string;
   ciphertextCid: string;
+  ivBase64?: string;
   mimeHint: string;
   sizeBytes: number;
   version: number;

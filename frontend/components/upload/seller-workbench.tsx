@@ -1,14 +1,18 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import Image from "next/image";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PROTOCOL_FEE_BPS, randomHexId, type ProductMetadata } from "@arxcess/sdk";
+import { InfoButton, OverlayDialog } from "@/components/ui/overlay-dialog";
+import { NoticeToast } from "@/components/ui/notice-toast";
 import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
 import { buildCreateListingTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
+import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
 import { saveStoredSellerDeliveryMaterial, type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
 
@@ -42,6 +46,18 @@ function truncateValue(value: string, head = 10, tail = 8) {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
+function inferPreviewMode(file: File | null) {
+  if (!file) {
+    return "empty" as const;
+  }
+
+  if (file.type.startsWith("image/")) {
+    return "image" as const;
+  }
+
+  return "file" as const;
+}
+
 export function SellerWorkbench() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
@@ -49,14 +65,14 @@ export function SellerWorkbench() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [isFlowDialogOpen, setIsFlowDialogOpen] = useState(false);
   const [result, setResult] = useState<
     | {
         listing: LocalProductListing;
         keyCommitmentHex: string;
         vaultHandleHex: string;
-        protocolFeeBps: number;
-        contentKeyBase64: string;
-        ivBase64: string;
         publishSignature: string;
       }
     | null
@@ -79,6 +95,21 @@ export function SellerWorkbench() {
 
     return Math.max(amount - Number(estimatedFeeSol), 0).toFixed(4);
   }, [estimatedFeeSol, form.priceSol]);
+  const previewMode = useMemo(() => inferPreviewMode(file), [file]);
+
+  useEffect(() => {
+    if (!file || !file.type.startsWith("image/")) {
+      setFilePreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [file]);
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     const value =
@@ -132,10 +163,12 @@ export function SellerWorkbench() {
     setBusy(true);
     setError(null);
     setResult(null);
+    setStatusMessage("Encrypting the asset in your browser...");
 
     try {
       const encrypted = await encryptFile(file);
       const ciphertextBytes = Uint8Array.from(encrypted.ciphertext);
+      setStatusMessage("Uploading ciphertext to Pinata...");
       const ciphertextUpload = await uploadCiphertextToPinata(new Blob([ciphertextBytes]), `${file.name}.enc`);
       const productIdHex = randomHexId();
 
@@ -144,11 +177,13 @@ export function SellerWorkbench() {
         description: form.description,
         category: form.category,
         ciphertextCid: ciphertextUpload.cid,
+        ivBase64: encrypted.ivBase64,
         mimeHint: encrypted.mimeType,
         sizeBytes: encrypted.sizeBytes,
         version: 1
       };
 
+      setStatusMessage("Uploading metadata to Pinata...");
       const metadataUpload = await uploadJsonToPinata(metadata, `${productIdHex}-metadata`);
 
       const listing: LocalProductListing = {
@@ -190,22 +225,24 @@ export function SellerWorkbench() {
 
       transaction.recentBlockhash = latestBlockhash.blockhash;
 
+      setStatusMessage("Waiting for wallet approval to publish on-chain...");
       const publishSignature = await sendTransaction(transaction, connection);
 
-      await connection.confirmTransaction(
-        {
-          signature: publishSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-        },
-        "confirmed"
-      );
+      setStatusMessage("Transaction sent. Waiting for on-chain confirmation...");
+      await confirmTransactionOrThrow({
+        connection,
+        signature: publishSignature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        label: "Publish listing"
+      });
 
       listing.publishSignature = publishSignature;
 
       let storedListing = listing;
 
       if (hasSupabaseListingsPublicConfig()) {
+        setStatusMessage("Saving listing to shared Supabase catalog...");
         try {
           storedListing = await createMarketplaceListing(listing);
         } catch (cause) {
@@ -215,23 +252,23 @@ export function SellerWorkbench() {
             throw cause;
           }
 
-          setError("Supabase table belum dibuat. Listing disimpan lokal dulu. Jalankan SQL di supabase/marketplace_listings.sql lalu refresh.");
+          setError("Supabase listings table is unavailable. The listing was stored locally only.");
         }
       }
 
       saveStoredSellerDeliveryMaterial(productIdHex, {
         contentKeyBase64: encrypted.contentKeyBase64,
-        ivBase64: encrypted.ivBase64
+        ivBase64: encrypted.ivBase64,
+        ciphertextHashHex: encrypted.ciphertextHashHex,
+        keyCommitmentHex
       });
       saveStoredProduct(storedListing);
+      setStatusMessage("Listing published successfully.");
 
       setResult({
         listing: storedListing,
-        protocolFeeBps: PROTOCOL_FEE_BPS,
         keyCommitmentHex,
         vaultHandleHex,
-        contentKeyBase64: encrypted.contentKeyBase64,
-        ivBase64: encrypted.ivBase64,
         publishSignature
       });
 
@@ -239,6 +276,7 @@ export function SellerWorkbench() {
       setFile(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to create listing.");
+      setStatusMessage(null);
     } finally {
       setBusy(false);
     }
@@ -249,7 +287,10 @@ export function SellerWorkbench() {
       <div className="grid grid-2 marketplace-split">
         <div className="card surface">
           <div>
-            <h2 className="section-title">Create encrypted listing</h2>
+            <div className="title-with-action">
+              <h2 className="section-title">Create encrypted listing</h2>
+              <InfoButton label="View seller flow details" onClick={() => setIsFlowDialogOpen(true)} />
+            </div>
             <p className="muted">Publish the commercial shell of your product while the full asset stays encrypted until a buyer pays.</p>
           </div>
           <form className="grid" onSubmit={handleSubmit}>
@@ -303,12 +344,12 @@ export function SellerWorkbench() {
             </label>
             <div className="row">
               <button className="button" type="submit" disabled={busy || !file}>
-                {busy ? "Encrypting, signing, and publishing..." : "Publish listing on-chain"}
+                {busy ? "Publishing in progress..." : "Publish listing on-chain"}
               </button>
               <span className="badge">Seller wallet: {sellerWallet ?? "not connected"}</span>
             </div>
           </form>
-          {error ? <div className="badge">{error}</div> : null}
+          {statusMessage ? <div className="badge">{statusMessage}</div> : null}
         </div>
 
         <div className="card surface accent-card">
@@ -319,6 +360,21 @@ export function SellerWorkbench() {
           </div>
           <div className="asset-stage">
             <div className="asset-stage__media">
+              <div className="asset-preview-frame">
+                {previewMode === "image" && filePreviewUrl ? (
+                  <Image className="asset-preview-image" src={filePreviewUrl} alt={file?.name ?? "Selected asset preview"} fill unoptimized />
+                ) : (
+                  <div className="asset-preview-placeholder">
+                    <span className="badge">{file ? (file.type || "file").split("/")[0] : "No asset"}</span>
+                    <strong>{file ? file.name : "Upload a file to preview it here"}</strong>
+                    <span className="muted">
+                      {file
+                        ? "This public-facing preview helps the seller verify the listing before publishing."
+                        : "For an MVP, this panel should preview the public cover or representative asset state before encryption."}
+                    </span>
+                  </div>
+                )}
+              </div>
               <span className="badge">Encrypted asset</span>
               <strong>{form.title || "Untitled listing"}</strong>
               <span className="muted">{selectedAssetLabel}</span>
@@ -343,6 +399,10 @@ export function SellerWorkbench() {
             <div className="detail-row">
               <span className="muted">Category</span>
               <strong>{form.category}</strong>
+            </div>
+            <div className="detail-row">
+              <span className="muted">Preview</span>
+              <strong>{previewMode === "image" ? "Image thumbnail ready" : file ? "File metadata ready" : "No asset selected"}</strong>
             </div>
             <div className="detail-row">
               <span className="muted">Reveal mode</span>
@@ -426,29 +486,21 @@ export function SellerWorkbench() {
                   <span className="muted">Max reveals</span>
                   <strong>{result.listing.policy.maxAccessCount}</strong>
                 </div>
-              </div>
-              <div className="timeline">
-                <div className="timeline-item done">
-                  <strong>1. Encrypt asset in browser</strong>
-                  <span className="muted">The full file never left the browser unencrypted.</span>
-                </div>
-                <div className="timeline-item done">
-                  <strong>2. Upload marketplace payload</strong>
-                  <span className="muted">Metadata and ciphertext were pushed to Pinata.</span>
-                </div>
-                <div className="timeline-item done">
-                  <strong>3. Sign publish transaction</strong>
-                  <span className="muted">The wallet approved create, key deposit, and activation on Devnet.</span>
-                </div>
-                <div className="timeline-item active">
-                  <strong>4. Wait for buyer checkout</strong>
-                  <span className="muted">Next UX step is purchase, sealed delivery, and reveal.</span>
+                <div className="detail-row">
+                  <span className="muted">Flow</span>
+                  <strong>The listing is live, buyers can pay on-chain, and the seller finalizes sealed delivery before buyers reveal locally.</strong>
                 </div>
               </div>
             </div>
           </div>
         </div>
       ) : null}
+      <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
+      <OverlayDialog open={isFlowDialogOpen} title="Seller flow" onClose={() => setIsFlowDialogOpen(false)}>
+        <span>1. Seller encrypts the asset in the browser and uploads ciphertext plus metadata.</span>
+        <span>2. The listing is published on-chain and the seller browser keeps the delivery material locally.</span>
+        <span>3. When a buyer pays, the seller must finalize delivery from the seller environment that still has the delivery material.</span>
+      </OverlayDialog>
     </div>
   );
 }

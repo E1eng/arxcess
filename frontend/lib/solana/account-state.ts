@@ -1,6 +1,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { type LocalProductListing } from "@/lib/storage/marketplace";
 import { deriveProductStateAddress, derivePurchaseStateAddress } from "@/lib/solana/arxcess";
+import { bytesToBase64 } from "@/lib/utils/bytes";
 
 const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBKEY_BYTES = 32;
@@ -57,6 +58,7 @@ export interface DecodedPurchaseState {
   statusLabel: "prepared" | "pending_seal" | "delivered" | "revoked";
   entitlementFlag: number;
   sealedKeyLen: number;
+  sealedKeyBoxBase64: string | null;
   expiresAt: number;
   accessCount: number;
   maxAccessCount: number;
@@ -98,7 +100,9 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   const entitlementFlag = readU8(view, offset);
   offset += 1;
   const sealedKeyLen = readU16(view, offset);
-  offset += 2 + 256 + 100 + 32;
+  offset += 2;
+  const sealedKeyBox = data.slice(offset, offset + 256);
+  offset += 256 + 100 + 32;
   const expiresAt = readI64(view, offset);
   offset += 8;
   const accessCount = readU32(view, offset);
@@ -116,6 +120,7 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
     statusLabel: PURCHASE_STATUS_LABELS[status] ?? "prepared",
     entitlementFlag,
     sealedKeyLen,
+    sealedKeyBoxBase64: sealedKeyLen > 0 ? bytesToBase64(sealedKeyBox.slice(0, sealedKeyLen)) : null,
     expiresAt,
     accessCount,
     maxAccessCount,

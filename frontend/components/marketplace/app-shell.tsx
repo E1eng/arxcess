@@ -1,9 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { PropsWithChildren } from "react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { usePathname } from "next/navigation";
+
+const WalletMultiButton = dynamic(
+  () => import("@solana/wallet-adapter-react-ui").then((module) => module.WalletMultiButton),
+  { ssr: false }
+);
 
 const links = [
   { href: "/seller", label: "Seller" },

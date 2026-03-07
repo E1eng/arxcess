@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { DeliveryKeypair, generateDeliveryKeypair } from "@/lib/crypto/delivery";
 import { getStoredDeliveryKeypair, saveStoredDeliveryKeypair } from "@/lib/storage/marketplace";
 
-export function useDeliveryKeys() {
-  const [keypair, setKeypair] = useState<DeliveryKeypair | null>(() => getStoredDeliveryKeypair());
+export function useDeliveryKeys(wallet: string | null) {
+  const [keypair, setKeypair] = useState<DeliveryKeypair | null>(() => getStoredDeliveryKeypair(wallet));
 
-  const hasKeypair = useMemo(() => keypair !== null, [keypair]);
+  useEffect(() => {
+    setKeypair(getStoredDeliveryKeypair(wallet));
+  }, [wallet]);
 
   function ensureKeypair() {
     if (keypair) {
@@ -15,14 +17,13 @@ export function useDeliveryKeys() {
     }
 
     const created = generateDeliveryKeypair();
-    saveStoredDeliveryKeypair(created);
+    saveStoredDeliveryKeypair(wallet, created);
     setKeypair(created);
     return created;
   }
 
   return {
     keypair,
-    hasKeypair,
     ensureKeypair
   };
 }

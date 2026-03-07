@@ -8,7 +8,18 @@ export function usePurchases() {
 
   useEffect(() => {
     setPurchases(listStoredPurchases());
+
+    function handleStorage() {
+      setPurchases(listStoredPurchases());
+    }
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
   }, []);
+
   function refreshPurchases() {
     setPurchases(listStoredPurchases());
   }

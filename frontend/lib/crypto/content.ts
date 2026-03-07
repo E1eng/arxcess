@@ -37,16 +37,15 @@ export async function decryptCiphertext(args: {
   contentKey: Uint8Array;
   iv: Uint8Array;
 }): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey("raw", toArrayBuffer(args.contentKey), { name: "AES-GCM" }, false, ["decrypt"]);
-  const plaintextBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(args.iv) },
-    cryptoKey,
-    toArrayBuffer(args.ciphertext)
-  );
-  return new Uint8Array(plaintextBuffer);
-}
-
-export async function createKeyCommitmentHex(contentKeyBase64: string, ciphertextHashHex: string): Promise<string> {
-  const payload = new TextEncoder().encode(`${contentKeyBase64}:${ciphertextHashHex}`);
-  return sha256Hex(payload);
+  try {
+    const cryptoKey = await crypto.subtle.importKey("raw", toArrayBuffer(args.contentKey), { name: "AES-GCM" }, false, ["decrypt"]);
+    const plaintextBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: toArrayBuffer(args.iv) },
+      cryptoKey,
+      toArrayBuffer(args.ciphertext)
+    );
+    return new Uint8Array(plaintextBuffer);
+  } catch {
+    throw new Error("Failed to decrypt ciphertext with the delivery material for this purchase.");
+  }
 }

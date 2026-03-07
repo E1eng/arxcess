@@ -1,5 +1,5 @@
 import nacl from "tweetnacl";
-import { base64ToBytes, bytesToBase64, bytesToHex } from "@/lib/utils/bytes";
+import { base64ToBytes, bytesToBase64, bytesToHex, concatBytes } from "@/lib/utils/bytes";
 
 export interface DeliveryKeypair {
   publicKeyBase64: string;
@@ -22,6 +22,7 @@ export function decodeDeliveryKeypair(keypair: DeliveryKeypair) {
 }
 
 const DELIVERY_IV_BYTES = 12;
+const DELIVERY_CONTENT_KEY_BYTES = 32;
 
 export function sealDeliveryMaterial(args: {
   buyerPublicKeyBase64: string;
@@ -71,18 +72,28 @@ export function unsealDeliveryMaterial(args: {
   const payload = sealedKeyBox.slice(publicKeyLength + nonceLength);
   const opened = nacl.box.open(payload, nonce, senderPublicKey, secretKey);
 
-  if (!opened || opened.length <= 32) {
+  if (!opened) {
     throw new Error("Failed to unseal delivery material");
   }
 
+  if (opened.length !== DELIVERY_CONTENT_KEY_BYTES + DELIVERY_IV_BYTES) {
+    throw new Error("Unsealed delivery material has an invalid payload shape");
+  }
+
   return {
-    contentKey: opened.slice(0, 32),
-    iv: opened.slice(32)
+    contentKey: opened.slice(0, DELIVERY_CONTENT_KEY_BYTES),
+    iv: opened.slice(DELIVERY_CONTENT_KEY_BYTES)
   };
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+export async function createDeliveryMaterialDigestHex(args: { contentKey: Uint8Array; iv: Uint8Array }) {
+  const payload = concatBytes(args.contentKey, args.iv);
+  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
+  return bytesToHex(new Uint8Array(digest));
 }
 
 export async function createDeliveryCommitmentHex(sealedKeyBoxBase64: string) {

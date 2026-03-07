@@ -2,39 +2,55 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { type ProductMetadata } from "@arxcess/sdk";
 import { evaluateDeliveryForFinalize } from "@/lib/access/delivery-evaluator";
-import { decryptCiphertext } from "@/lib/crypto/content";
-import { unsealDeliveryMaterial } from "@/lib/crypto/delivery";
+import { InfoButton, OverlayDialog } from "@/components/ui/overlay-dialog";
+import { NoticeToast } from "@/components/ui/notice-toast";
+import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
+import { createDeliveryMaterialDigestHex, unsealDeliveryMaterial } from "@/lib/crypto/delivery";
 import { hasConfiguredProgramId } from "@/lib/anchor/client";
+import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { useProducts } from "@/hooks/use-products";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { usePurchases } from "@/hooks/use-purchases";
 import { fetchOnchainPurchaseStates, type DecodedPurchaseState } from "@/lib/solana/account-state";
 import { buildConsumeAccessTransaction, buildFinalizeDeliveryTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
-import { getStoredSellerDeliveryMaterial, saveStoredPurchase } from "@/lib/storage/marketplace";
+import { clearStoredMarketplaceState, getStoredPurchase, getStoredSellerDeliveryMaterial, saveStoredPurchase } from "@/lib/storage/marketplace";
+import { base64ToBytes } from "@/lib/utils/bytes";
 
- function truncateValue(value: string, head = 12, tail = 8) {
-   if (value.length <= head + tail + 3) {
-     return value;
-   }
+function truncateValue(value: string, head = 12, tail = 8) {
+  if (value.length <= head + tail + 3) {
+    return value;
+  }
 
-   return `${value.slice(0, head)}...${value.slice(-tail)}`;
- }
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
 
- function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
- }
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function isConsumeAccessUnsupported(message: string) {
+  return (
+    message.includes("InstructionFallbackNotFound") ||
+    message.includes("Fallback functions are not supported") ||
+    message.includes('"Custom":101') ||
+    message.includes("custom program error: 0x65")
+  );
+}
 
 export function PurchasesList() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const { purchases, refreshPurchases } = usePurchases();
   const { products } = useProducts();
-  const { keypair, ensureKeypair } = useDeliveryKeys();
+  const buyerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const { keypair, ensureKeypair } = useDeliveryKeys(buyerWallet);
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
   const [revealedPurchaseId, setRevealedPurchaseId] = useState<string | null>(null);
+  const [isFlowDialogOpen, setIsFlowDialogOpen] = useState(false);
   const purchaseCards = useMemo(
     () =>
       purchases.map((purchase) => ({
@@ -81,8 +97,12 @@ export function PurchasesList() {
     };
   }, [connection, purchaseCards]);
 
+  function resolvePurchase(purchaseIdHex: string) {
+    return getStoredPurchase(purchaseIdHex) ?? purchases.find((entry) => entry.purchaseIdHex === purchaseIdHex) ?? null;
+  }
+
   async function finalizeDelivery(purchaseIdHex: string) {
-    const purchase = purchases.find((entry) => entry.purchaseIdHex === purchaseIdHex) ?? null;
+    const purchase = resolvePurchase(purchaseIdHex);
     const product = purchase ? products.find((entry) => entry.productIdHex === purchase.productIdHex) ?? null : null;
 
     if (!purchase || !product) {
@@ -117,12 +137,51 @@ export function PurchasesList() {
 
     try {
       const onchain = onchainPurchaseStates[purchaseIdHex];
+      const metadataResponse = await fetch(product.metadataGatewayUrl, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!metadataResponse.ok) {
+        throw new Error("Failed to fetch listing metadata before finalize.");
+      }
+
+      const metadata = (await metadataResponse.json()) as ProductMetadata;
+      const finalizeIv = metadata.ivBase64 ? base64ToBytes(metadata.ivBase64) : base64ToBytes(deliveryMaterial.ivBase64);
+      const ciphertextResponse = await fetch(product.ciphertextGatewayUrl, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!ciphertextResponse.ok) {
+        throw new Error("Failed to fetch ciphertext before finalize.");
+      }
+
+      const ciphertext = new Uint8Array(await ciphertextResponse.arrayBuffer());
+      const ciphertextHashHex = await sha256Hex(ciphertext);
+
+      if (ciphertextHashHex !== product.ciphertextHashHex) {
+        throw new Error("Finalize blocked because the downloaded ciphertext does not match the listing hash.");
+      }
+
+      await decryptCiphertext({
+        ciphertext,
+        contentKey: base64ToBytes(deliveryMaterial.contentKeyBase64),
+        iv: finalizeIv
+      });
+      const deliveryMaterialDigestHex = await createDeliveryMaterialDigestHex({
+        contentKey: base64ToBytes(deliveryMaterial.contentKeyBase64),
+        iv: finalizeIv
+      });
+
       const deliveryEvaluation = await evaluateDeliveryForFinalize({
         buyerDeliveryPublicKeyBase64: purchase.buyerDeliveryPublicKeyBase64,
         ciphertextHashHex: product.ciphertextHashHex,
+        productIdHex: product.productIdHex,
         purchaseNotRevoked: !(onchain?.revokedAt || purchase.revokedAt),
         productActive: true,
         paymentVerified: Boolean(purchase.transactionSignature),
+        sellerWallet: product.sellerWallet,
         deliveryNotYetFinalized: (onchain?.statusLabel ?? purchase.status) !== "delivered",
         sellerDeliveryMaterial: deliveryMaterial
       });
@@ -140,21 +199,21 @@ export function PurchasesList() {
 
       const finalizeSignature = await sendTransaction(transaction, connection);
 
-      await connection.confirmTransaction(
-        {
-          signature: finalizeSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-        },
-        "confirmed"
-      );
+      await confirmTransactionOrThrow({
+        connection,
+        signature: finalizeSignature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        label: "Finalize delivery"
+      });
 
       saveStoredPurchase({
         ...purchase,
         status: "delivered",
         finalizeSignature,
         sealedKeyBoxBase64: deliveryEvaluation.sealedKeyBoxBase64,
-        deliveryCommitmentHex: deliveryEvaluation.deliveryCommitmentHex
+        deliveryCommitmentHex: deliveryEvaluation.deliveryCommitmentHex,
+        deliveryMaterialDigestHex
       });
       refreshPurchases();
     } catch (cause) {
@@ -165,7 +224,7 @@ export function PurchasesList() {
   }
 
   async function revokePurchase(purchaseIdHex: string) {
-    const purchase = purchases.find((entry) => entry.purchaseIdHex === purchaseIdHex) ?? null;
+    const purchase = resolvePurchase(purchaseIdHex);
     const product = purchase ? products.find((entry) => entry.productIdHex === purchase.productIdHex) ?? null : null;
 
     if (!purchase || !product) {
@@ -208,14 +267,13 @@ export function PurchasesList() {
 
       const revokeSignature = await sendTransaction(transaction, connection);
 
-      await connection.confirmTransaction(
-        {
-          signature: revokeSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-        },
-        "confirmed"
-      );
+      await confirmTransactionOrThrow({
+        connection,
+        signature: revokeSignature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        label: "Revoke purchase"
+      });
 
       saveStoredPurchase({
         ...purchase,
@@ -232,8 +290,20 @@ export function PurchasesList() {
   }
 
   async function revealPurchase(purchaseIdHex: string) {
-    const purchase = purchases.find((entry) => entry.purchaseIdHex === purchaseIdHex) ?? null;
+    const purchase = resolvePurchase(purchaseIdHex);
     const product = purchase ? products.find((entry) => entry.productIdHex === purchase.productIdHex) ?? null : null;
+    const onchain = onchainPurchaseStates[purchaseIdHex];
+    let stage = "prepare";
+    let consumeAccessUnavailable = false;
+    const diagnostics = {
+      stage: "prepare",
+      payloadSource: "unknown",
+      metadataIv: "0",
+      payloadsMatch: "na",
+      storedDigest: "none",
+      revealDigest: "none",
+      ciphertextHashMatch: "na"
+    };
 
     if (!purchase || !product) {
       setError("Purchase or listing data is missing.");
@@ -250,24 +320,48 @@ export function PurchasesList() {
       return;
     }
 
-    const deliveryKeypair = keypair ?? ensureKeypair();
+    if (!keypair) {
+      setError("Buyer delivery keypair is missing in this browser. Use the same browser profile that created the purchase, or import the original delivery keypair before revealing.");
+      return;
+    }
 
-    if (!purchase.sealedKeyBoxBase64) {
+    if (keypair.publicKeyBase64 !== purchase.buyerDeliveryPublicKeyBase64) {
+      setError("The current buyer delivery keypair does not match this purchase. Restore the original delivery keypair used during checkout before revealing.");
+      return;
+    }
+
+    const deliveryKeypair = keypair;
+
+    if (!purchase.sealedKeyBoxBase64 && !onchain?.sealedKeyBoxBase64) {
       setError("Sealed delivery is not ready yet.");
       return;
     }
 
-    if (purchase.revokedAt) {
+    if (onchain && onchain.statusLabel === "delivered" && onchain.entitlementFlag !== 1) {
+      setError("This delivery was finalized without an approved unlock payload, so reveal is blocked.");
+      return;
+    }
+
+    if (onchain?.revokedAt || purchase.revokedAt) {
       setError("Access has been revoked for this purchase.");
       return;
     }
 
-    if (purchase.expiresAt && new Date(purchase.expiresAt).getTime() < Date.now()) {
+    const effectiveExpiresAtMs = onchain?.expiresAt
+      ? onchain.expiresAt * 1000
+      : purchase.expiresAt
+        ? new Date(purchase.expiresAt).getTime()
+        : 0;
+
+    if (effectiveExpiresAtMs && effectiveExpiresAtMs < Date.now()) {
       setError("This purchase license has expired.");
       return;
     }
 
-    if (purchase.accessCount >= purchase.maxAccessCount) {
+    const effectiveAccessCount = onchain?.accessCount ?? purchase.accessCount;
+    const effectiveMaxAccessCount = onchain?.maxAccessCount ?? purchase.maxAccessCount;
+
+    if (effectiveAccessCount >= effectiveMaxAccessCount) {
       setError("This purchase has exhausted its reveal quota.");
       return;
     }
@@ -281,30 +375,59 @@ export function PurchasesList() {
     setError(null);
 
     try {
-      const { transaction } = await buildConsumeAccessTransaction({
-        buyer: publicKey,
-        listing: product,
-        purchaseIdHex
-      });
-      const latestBlockhash = await connection.getLatestBlockhash();
+      stage = "resolve_payload";
+      diagnostics.stage = stage;
+      if (purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64 && purchase.sealedKeyBoxBase64 !== onchain.sealedKeyBoxBase64) {
+        setError("The local finalized delivery payload does not match the on-chain decoded payload. Using the local payload for reveal.");
+      }
 
-      transaction.recentBlockhash = latestBlockhash.blockhash;
+      diagnostics.payloadsMatch =
+        purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64
+          ? purchase.sealedKeyBoxBase64 === onchain.sealedKeyBoxBase64
+            ? "1"
+            : "0"
+          : "na";
 
-      const consumeSignature = await sendTransaction(transaction, connection);
+      const sealedKeyBoxBase64 = purchase.sealedKeyBoxBase64 ?? onchain?.sealedKeyBoxBase64;
+      diagnostics.payloadSource = purchase.sealedKeyBoxBase64 ? "local" : onchain?.sealedKeyBoxBase64 ? "chain" : "missing";
 
-      await connection.confirmTransaction(
-        {
-          signature: consumeSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-        },
-        "confirmed"
-      );
+      if (!sealedKeyBoxBase64) {
+        throw new Error("Sealed delivery payload is missing from both local state and on-chain purchase state.");
+      }
 
+      stage = "unseal";
+      diagnostics.stage = stage;
       const deliveryMaterial = unsealDeliveryMaterial({
-        sealedKeyBoxBase64: purchase.sealedKeyBoxBase64,
+        sealedKeyBoxBase64,
         keypair: deliveryKeypair
       });
+      stage = "metadata";
+      diagnostics.stage = stage;
+      const metadataResponse = await fetch(product.metadataGatewayUrl, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!metadataResponse.ok) {
+        throw new Error("Failed to fetch listing metadata from storage.");
+      }
+
+      const metadata = (await metadataResponse.json()) as ProductMetadata;
+      const iv = metadata.ivBase64 ? base64ToBytes(metadata.ivBase64) : deliveryMaterial.iv;
+      diagnostics.metadataIv = metadata.ivBase64 ? "1" : "0";
+      const deliveryMaterialDigestHex = await createDeliveryMaterialDigestHex({
+        contentKey: deliveryMaterial.contentKey,
+        iv
+      });
+      diagnostics.storedDigest = purchase.deliveryMaterialDigestHex ? purchase.deliveryMaterialDigestHex.slice(0, 10) : "none";
+      diagnostics.revealDigest = deliveryMaterialDigestHex.slice(0, 10);
+
+      if (purchase.deliveryMaterialDigestHex && purchase.deliveryMaterialDigestHex !== deliveryMaterialDigestHex) {
+        throw new Error("Buyer unsealed delivery material does not match the material the seller validated during finalize.");
+      }
+
+      stage = "ciphertext";
+      diagnostics.stage = stage;
       const response = await fetch(product.ciphertextGatewayUrl, {
         method: "GET",
         cache: "no-store"
@@ -315,11 +438,103 @@ export function PurchasesList() {
       }
 
       const ciphertext = new Uint8Array(await response.arrayBuffer());
+      const ciphertextHashHex = await sha256Hex(ciphertext);
+      diagnostics.ciphertextHashMatch = ciphertextHashHex === product.ciphertextHashHex ? "1" : "0";
+
+      if (ciphertextHashHex !== product.ciphertextHashHex) {
+        throw new Error("Downloaded ciphertext does not match the listing hash for this purchase.");
+      }
+
+      stage = "decrypt";
+      diagnostics.stage = stage;
       const plaintext = await decryptCiphertext({
         ciphertext,
         contentKey: deliveryMaterial.contentKey,
-        iv: deliveryMaterial.iv
+        iv
       });
+      stage = "consume_access";
+      diagnostics.stage = stage;
+      const { transaction } = await buildConsumeAccessTransaction({
+        buyer: publicKey,
+        listing: product,
+        purchaseIdHex
+      });
+      const latestBlockhash = await connection.getLatestBlockhash();
+
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = publicKey;
+
+      stage = "simulate_consume_access";
+      diagnostics.stage = stage;
+      try {
+        const simulation = await (connection as {
+          simulateTransaction: (
+            transaction: object,
+            config: {
+              commitment: "processed";
+              replaceRecentBlockhash: boolean;
+              sigVerify: boolean;
+            }
+          ) => Promise<{
+            value: {
+              err: unknown;
+              logs?: string[];
+            };
+          }>;
+        }).simulateTransaction(transaction, {
+          commitment: "processed",
+          replaceRecentBlockhash: true,
+          sigVerify: false
+        });
+
+        if (simulation.value.err) {
+          const logSuffix = simulation.value.logs?.length ? ` Logs: ${simulation.value.logs.slice(-8).join(" | ")}` : "";
+          throw new Error(`Consume access would fail on-chain: ${JSON.stringify(simulation.value.err)}.${logSuffix}`);
+        }
+      } catch (cause) {
+        const simulationMessage = cause instanceof Error ? cause.message : String(cause);
+
+        if (simulationMessage.includes("Consume access would fail on-chain")) {
+          if (isConsumeAccessUnsupported(simulationMessage)) {
+            consumeAccessUnavailable = true;
+          } else {
+            throw cause;
+          }
+        } else if (isConsumeAccessUnsupported(simulationMessage)) {
+          consumeAccessUnavailable = true;
+        }
+      }
+
+      if (!consumeAccessUnavailable) {
+        stage = "wallet_approval";
+        diagnostics.stage = stage;
+        try {
+          const consumeSignature = await sendTransaction(transaction, connection, {
+            skipPreflight: true
+          });
+
+          stage = "confirm_consume_access";
+          diagnostics.stage = stage;
+          await confirmTransactionOrThrow({
+            connection,
+            signature: consumeSignature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            label: "Consume access"
+          });
+        } catch (cause) {
+          const consumeMessage = cause instanceof Error ? cause.message : String(cause);
+
+          if (isConsumeAccessUnsupported(consumeMessage)) {
+            consumeAccessUnavailable = true;
+          } else {
+            throw cause;
+          }
+        }
+      }
+
+      stage = "download";
+      diagnostics.stage = stage;
       const blob = new Blob([toArrayBuffer(plaintext)], { type: product.mimeType });
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -332,22 +547,63 @@ export function PurchasesList() {
       URL.revokeObjectURL(objectUrl);
       saveStoredPurchase({
         ...purchase,
-        accessCount: purchase.accessCount + 1
+        accessCount: purchase.accessCount + 1,
+        sealedKeyBoxBase64
       });
       refreshPurchases();
       setRevealedPurchaseId(purchaseIdHex);
+
+      if (consumeAccessUnavailable) {
+        setError("Asset revealed successfully, but the deployed program does not support on-chain consume access yet. Access usage was tracked locally for this session.");
+      }
+      return;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to reveal asset.");
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (message.includes("Failed to unseal delivery material")) {
+        setError("Reveal failed because the buyer delivery keypair in this browser does not match the one used during checkout.");
+      } else if (message.includes("does not match the material the seller validated")) {
+        setError("Reveal failed because the buyer opened a different delivery payload than the one the seller validated during finalize.");
+      } else if (message.includes("invalid payload shape")) {
+        setError("Reveal failed because the finalized delivery payload is malformed. The seller likely finalized with mismatched delivery material.");
+      } else if (message.includes("Consume access failed on-chain")) {
+        setError(`Reveal decrypted successfully, but consume access failed on-chain. ${message}`);
+      } else if (message.includes("Consume access would fail on-chain")) {
+        setError(`Reveal decrypted successfully, but the consume access transaction would be rejected on-chain. ${message}`);
+      } else if (stage === "wallet_approval" || stage === "confirm_consume_access" || stage === "download") {
+        setError(`Reveal decrypted successfully, but failed during ${stage}. ${message}`);
+      } else if (
+        message.includes("Failed to decrypt ciphertext") ||
+        message.includes("Downloaded ciphertext does not match") ||
+        message.includes("Unexpected error")
+      ) {
+        setError(
+          `Reveal failed while decrypting the downloaded ciphertext. The sealed delivery material or encrypted file may not match this purchase. [stage=${diagnostics.stage} src=${diagnostics.payloadSource} same=${diagnostics.payloadsMatch} iv=${diagnostics.metadataIv} stored=${diagnostics.storedDigest} reveal=${diagnostics.revealDigest} hash=${diagnostics.ciphertextHashMatch}]`
+        );
+      } else {
+        setError(message || "Failed to reveal asset.");
+      }
     } finally {
       setBusyPurchaseId(null);
     }
+  }
+
+  function resetLocalState() {
+    clearStoredMarketplaceState();
+    setError(null);
+    setBusyPurchaseId(null);
+    setRevealedPurchaseId(null);
+    setOnchainPurchaseStates({});
+    window.location.reload();
   }
 
   return (
     <div className="grid">
       <div className="card">
         <div>
-          <h2 className="section-title">Buyer delivery keys</h2>
+          <div className="title-with-action">
+            <h2 className="section-title">Buyer delivery keys</h2>
+            <InfoButton label="View buyer key flow details" onClick={() => setIsFlowDialogOpen(true)} />
+          </div>
           <p className="muted">This keypair becomes the buyer-side identity for sealed delivery. Once payment is confirmed, the reveal step should use this key to unlock the purchased asset.</p>
         </div>
         <div className="row">
@@ -371,10 +627,17 @@ export function PurchasesList() {
       </div>
       <div className="card">
         <div>
-          <h2 className="section-title">Buyer library</h2>
-          <p className="muted">This area should become the post-checkout home for every purchase: waiting for payment, waiting for key delivery, and eventually reveal/download.</p>
+          <div className="title-with-action">
+            <h2 className="section-title">Buyer library</h2>
+            <InfoButton label="View purchase flow details" onClick={() => setIsFlowDialogOpen(true)} />
+          </div>
+          <p className="muted">This area should become the post-checkout home for every purchase.</p>
         </div>
-        {error ? <span className="badge">{error}</span> : null}
+        <div className="row">
+          <button className="button secondary" type="button" onClick={resetLocalState}>
+            Reset local demo state
+          </button>
+        </div>
         {purchaseCards.length === 0 ? (
           <span className="muted">No purchase intents prepared yet. Go to the catalog and start a checkout flow.</span>
         ) : (
@@ -451,33 +714,29 @@ export function PurchasesList() {
                     {busyPurchaseId === purchase.purchaseIdHex && effectiveStatus === "revoked" ? "Revoking..." : "Revoke access"}
                   </button>
                 </div>
-                <div className="timeline">
-                  <div className="timeline-item done">
-                    <strong>1. Checkout prepared</strong>
-                    <span className="muted">The app already has the buyer intent and delivery key.</span>
-                  </div>
-                  <div className={`timeline-item${effectiveStatus === "prepared" ? " active" : " done"}`}>
-                    <strong>2. Execute payment</strong>
-                    <span className="muted">Wallet signature submitted the on-chain purchase transaction.</span>
-                  </div>
-                  <div className={`timeline-item${effectiveStatus === "delivered" ? " done" : effectiveStatus === "pending_seal" ? " active" : ""}`}>
-                    <strong>3. Finalize delivery</strong>
-                    <span className="muted">Seller seals the delivery material and writes the sealed box on-chain.</span>
-                  </div>
-                  <div className={`timeline-item${effectiveStatus === "revoked" ? " done" : effectiveStatus === "delivered" ? " active" : ""}`}>
-                    <strong>4. Reveal full asset</strong>
-                    <span className="muted">Buyer decrypts locally using the sealed delivery material and downloaded ciphertext.</span>
-                  </div>
-                  <div className={`timeline-item${effectiveStatus === "revoked" ? " active" : ""}`}>
-                    <strong>5. Revoke later if needed</strong>
-                    <span className="muted">Seller can revoke future access when the listing policy allows it.</span>
-                  </div>
+                <div className="detail-row">
+                  <span className="muted">Flow</span>
+                  <strong>
+                    {effectiveStatus === "revoked"
+                      ? "This purchase was revoked, so future reveals are blocked."
+                      : effectiveStatus === "delivered"
+                        ? "Payment and delivery are complete. Reveal uses the original buyer delivery keypair stored in this browser."
+                        : effectiveStatus === "pending_seal"
+                          ? "Payment is confirmed on-chain. Waiting for the seller to finalize sealed delivery before reveal is possible."
+                          : "Checkout is staged locally and the purchase must be submitted on-chain before delivery can begin."}
+                  </strong>
                 </div>
               </div>
             );})}
           </div>
         )}
       </div>
+      <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
+      <OverlayDialog open={isFlowDialogOpen} title="Purchase flow" onClose={() => setIsFlowDialogOpen(false)}>
+        <span>1. Buyer pays on-chain and the purchase becomes pending delivery.</span>
+        <span>2. Seller finalizes a sealed delivery package using the seller environment that published the listing.</span>
+        <span>3. Buyer reveals the asset using the original buyer wallet and delivery keypair from checkout.</span>
+      </OverlayDialog>
     </div>
   );
 }

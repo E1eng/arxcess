@@ -1,10 +1,11 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { type LocalProductListing } from "@/lib/storage/marketplace";
 import { deriveProductStateAddress, derivePurchaseStateAddress } from "@/lib/solana/arxcess";
-import { bytesToBase64 } from "@/lib/utils/bytes";
+import { bytesToBase64, bytesToHex } from "@/lib/utils/bytes";
 
 const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBKEY_BYTES = 32;
+const ARCIUM_DELIVERY_CIPHERTEXT_COUNT = 2;
 const PRODUCT_STATUS_LABELS: Record<number, string> = {
   0: "draft",
   1: "active",
@@ -40,6 +41,12 @@ function readU64(view: DataView, offset: number) {
   return Number(view.getBigUint64(offset, true));
 }
 
+function readU128(view: DataView, offset: number) {
+  const low = view.getBigUint64(offset, true);
+  const high = view.getBigUint64(offset + 8, true);
+  return low | (high << 64n);
+}
+
 function dataViewFromBytes(bytes: Uint8Array) {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
@@ -62,6 +69,7 @@ export interface DecodedPurchaseState {
   entitlementFlag: number;
   sealedKeyLen: number;
   sealedKeyBoxBase64: string | null;
+  deliveryCommitmentHex: string;
   expiresAt: number;
   accessCount: number;
   maxAccessCount: number;
@@ -71,6 +79,9 @@ export interface DecodedPurchaseState {
   arciumDeliveryReady: boolean;
   arciumEvaluateComputationOffset: number;
   arciumEvaluateRequestedAt: number;
+  arciumDeliveryEncryptionKey: Uint8Array;
+  arciumDeliveryNonce: bigint;
+  arciumDeliveryCiphertexts: Uint8Array[];
 }
 
 export function decodeProductState(data: Uint8Array): DecodedProductState {
@@ -117,7 +128,10 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   const sealedKeyLen = readU16(view, offset);
   offset += 2;
   const sealedKeyBox = data.slice(offset, offset + 256);
-  offset += 256 + 100 + 32;
+  offset += 256;
+  offset += 100;
+  const deliveryCommitment = data.slice(offset, offset + 32);
+  offset += 32;
   const expiresAt = readI64(view, offset);
   offset += 8;
   const accessCount = readU32(view, offset);
@@ -135,6 +149,15 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   const arciumEvaluateComputationOffset = readU64(view, offset);
   offset += 8;
   const arciumEvaluateRequestedAt = readI64(view, offset);
+  offset += 8;
+  const arciumDeliveryEncryptionKey = data.slice(offset, offset + 32);
+  offset += 32;
+  const arciumDeliveryNonce = readU128(view, offset);
+  offset += 16;
+  const arciumDeliveryCiphertexts = Array.from({ length: ARCIUM_DELIVERY_CIPHERTEXT_COUNT }, (_, index) => {
+    const start = offset + (index * 32);
+    return data.slice(start, start + 32);
+  });
 
   return {
     status,
@@ -142,6 +165,7 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
     entitlementFlag,
     sealedKeyLen,
     sealedKeyBoxBase64: sealedKeyLen > 0 ? bytesToBase64(sealedKeyBox.slice(0, sealedKeyLen)) : null,
+    deliveryCommitmentHex: bytesToHex(deliveryCommitment),
     expiresAt,
     accessCount,
     maxAccessCount,
@@ -150,7 +174,10 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
     deliveredAt,
     arciumDeliveryReady,
     arciumEvaluateComputationOffset,
-    arciumEvaluateRequestedAt
+    arciumEvaluateRequestedAt,
+    arciumDeliveryEncryptionKey,
+    arciumDeliveryNonce,
+    arciumDeliveryCiphertexts
   };
 }
 

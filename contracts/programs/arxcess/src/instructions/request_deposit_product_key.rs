@@ -13,6 +13,7 @@ use arcium_client::idl::arcium::{
 use std::convert::TryInto;
 
 use crate::{
+    ArciumSignerAccount,
     constants::{PRODUCT_STATUS_DRAFT, PRODUCT_STATUS_PAUSED},
     errors::ArxcessError,
     events::{ArciumProductKeyComputationRequested, ArciumProductKeySettled},
@@ -30,9 +31,15 @@ pub struct RequestDepositProductKey<'info> {
     pub product_state: Box<Account<'info, ProductState>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
-    /// CHECK: sign_pda_account is the fixed Arcium signer PDA derived from the current MXE program and only passed through to the Arcium CPI.
-    #[account(address = derive_sign_pda!())]
-    pub sign_pda_account: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = seller,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
     /// CHECK: mempool_account is constrained to the canonical Arcium mempool PDA and only forwarded into the Arcium CPI.
     #[account(mut, address = derive_mempool_pda!(mxe_account, ArxcessError::ClusterNotSet))]
     pub mempool_account: UncheckedAccount<'info>,
@@ -126,10 +133,12 @@ pub fn handler(
         .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
         .account(
             ctx.accounts.product_state.key(),
-            ProductState::ARCIUM_MXE_MATERIAL_OFFSET,
-            ProductState::ARCIUM_MXE_MATERIAL_LEN,
+            ProductState::ARCIUM_MXE_CIPHERTEXTS_OFFSET,
+            ProductState::ARCIUM_MXE_CIPHERTEXTS_LEN,
         )
         .build();
+
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     queue_computation(
         ctx.accounts,
@@ -168,6 +177,8 @@ pub struct DepositKeyCallback<'info> {
     /// CHECK: comp_def_account is constrained to the canonical computation-definition PDA for deposit_key and only included for callback validation.
     #[account(address = derive_comp_def_pda!(crate::COMP_DEF_OFFSET_DEPOSIT_KEY))]
     pub comp_def_account: UncheckedAccount<'info>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     /// CHECK: computation_account is the Arcium computation PDA referenced by the callback and is only read by Arcium signature verification.
     pub computation_account: UncheckedAccount<'info>,
     pub cluster_account: Account<'info, Cluster>,
@@ -213,7 +224,7 @@ impl CallbackCompAccs for DepositKeyCallback<'_> {
 
         Ok(CallbackInstruction {
             program_id: crate::ID_CONST,
-            discriminator: crate::instruction::DepositKeyCallback::DISCRIMINATOR.to_vec(),
+            discriminator: crate::instruction::DepositKeyV2Callback::DISCRIMINATOR.to_vec(),
             accounts,
         })
     }

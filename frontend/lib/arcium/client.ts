@@ -3,7 +3,7 @@ import { getMXEPublicKey, RescueCipher, x25519 } from "@arcium-hq/client";
 import { PublicKey } from "@solana/web3.js";
 import { getProgramId } from "@/lib/anchor/client";
 import { decryptCiphertext } from "@/lib/crypto/content";
-import { createDeliveryCommitmentHex, createDeliveryMaterialDigestHex, sealDeliveryMaterial } from "@/lib/crypto/delivery";
+import { createDeliveryCommitmentHex, createDeliveryMaterialDigestHex, decodeDeliveryKeypair, sealDeliveryMaterial, type DeliveryKeypair } from "@/lib/crypto/delivery";
 import { type DepositKeyPayload, type FinalizeDeliveryRequest } from "@/lib/arcium/payload";
 import { type ListingCustodyMode, type LocalProductListing, type SellerDeliveryMaterial } from "@/lib/storage/marketplace";
 import { base64ToBytes, bytesToBase64, bytesToHex, concatBytes, hexToBytes } from "@/lib/utils/bytes";
@@ -12,6 +12,8 @@ const textEncoder = new TextEncoder();
 const FIXED_ID_BYTES = 32;
 const ZERO_KEY_BASE64 = bytesToBase64(new Uint8Array(32));
 const ZERO_IV_BASE64 = bytesToBase64(new Uint8Array(12));
+const DELIVERY_IV_BYTES = 12;
+const PACKED_DELIVERY_CIPHERTEXT_COUNT = 2;
 const PACKED_DELIVERY_MATERIAL_TOTAL_BYTES = 44;
 const PACKED_DELIVERY_MATERIAL_FIRST_CHUNK_BYTES = 26;
 const ARCIUM_FRONTEND_BLOCK_MESSAGE = "Arcium custody needs frontend runtime support that matches the current encrypted circuit shape.";
@@ -106,6 +108,22 @@ function bytesToBigIntLE(bytes: Uint8Array) {
   return value;
 }
 
+function bigIntToBytesLE(value: bigint, length: number) {
+  const output = new Uint8Array(length);
+  let remaining = value;
+
+  for (let index = 0; index < length; index += 1) {
+    output[index] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+
+  if (remaining !== 0n) {
+    throw new Error(`BigInt does not fit into ${length} bytes`);
+  }
+
+  return output;
+}
+
 function packDeliveryMaterial(contentKeyBytes: Uint8Array, ivBytes: Uint8Array) {
   const materialBytes = concatBytes(contentKeyBytes, ivBytes);
   if (materialBytes.length !== PACKED_DELIVERY_MATERIAL_TOTAL_BYTES) {
@@ -116,6 +134,22 @@ function packDeliveryMaterial(contentKeyBytes: Uint8Array, ivBytes: Uint8Array) 
     bytesToBigIntLE(materialBytes.slice(0, PACKED_DELIVERY_MATERIAL_FIRST_CHUNK_BYTES)),
     bytesToBigIntLE(materialBytes.slice(PACKED_DELIVERY_MATERIAL_FIRST_CHUNK_BYTES))
   ];
+}
+
+function unpackDeliveryMaterial(chunks: bigint[]) {
+  if (chunks.length !== PACKED_DELIVERY_CIPHERTEXT_COUNT) {
+    throw new Error(`Packed delivery material must contain ${PACKED_DELIVERY_CIPHERTEXT_COUNT} field elements`);
+  }
+
+  const materialBytes = concatBytes(
+    bigIntToBytesLE(chunks[0], PACKED_DELIVERY_MATERIAL_FIRST_CHUNK_BYTES),
+    bigIntToBytesLE(chunks[1], PACKED_DELIVERY_MATERIAL_TOTAL_BYTES - PACKED_DELIVERY_MATERIAL_FIRST_CHUNK_BYTES)
+  );
+
+  return {
+    contentKey: materialBytes.slice(0, FIXED_ID_BYTES),
+    iv: materialBytes.slice(FIXED_ID_BYTES, FIXED_ID_BYTES + DELIVERY_IV_BYTES)
+  };
 }
 
 async function sha256Bytes(input: Uint8Array) {
@@ -137,6 +171,48 @@ async function deriveListingKeyCommitmentHex(args: {
   );
   const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
   return bytesToHex(new Uint8Array(digest));
+}
+
+export async function createArciumDeliveryCommitmentHex(args: {
+  deliveryEncryptionKey: Uint8Array;
+  deliveryNonce: bigint;
+  deliveryCiphertexts: Uint8Array[];
+}) {
+  const payload = concatBytes(
+    assertFixedBytes("Arcium delivery encryption key", args.deliveryEncryptionKey, FIXED_ID_BYTES),
+    bigIntToBytesLE(args.deliveryNonce, 16),
+    ...args.deliveryCiphertexts.map((ciphertext, index) => {
+      return assertFixedBytes(`Arcium delivery ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES);
+    })
+  );
+  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+export async function revealArciumDeliveryMaterial(args: {
+  keypair: DeliveryKeypair;
+  deliveryEncryptionKey: Uint8Array;
+  deliveryNonce: bigint;
+  deliveryCiphertexts: Uint8Array[];
+}) {
+  if (args.deliveryCiphertexts.length !== PACKED_DELIVERY_CIPHERTEXT_COUNT) {
+    throw new Error(`Arcium delivery payload must contain ${PACKED_DELIVERY_CIPHERTEXT_COUNT} ciphertext field elements`);
+  }
+
+  const { secretKey } = decodeDeliveryKeypair(args.keypair);
+  const sharedSecret = x25519.getSharedSecret(
+    assertFixedBytes("Buyer delivery secret key", secretKey, FIXED_ID_BYTES),
+    assertFixedBytes("Arcium delivery encryption key", args.deliveryEncryptionKey, FIXED_ID_BYTES)
+  );
+  const cipher = new RescueCipher(sharedSecret);
+  const plaintext = cipher.decrypt(
+    args.deliveryCiphertexts.map((ciphertext, index) => {
+      return Array.from(assertFixedBytes(`Arcium delivery ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES));
+    }),
+    bigIntToBytesLE(args.deliveryNonce, 16)
+  );
+
+  return unpackDeliveryMaterial(plaintext);
 }
 
 export async function prepareListingCustody(

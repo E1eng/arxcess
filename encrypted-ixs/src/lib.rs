@@ -13,13 +13,13 @@ mod circuits {
     pub type DeliveryMaterial = Pack<[u8; 44]>;
 
     #[instruction]
-    pub fn deposit_key(input_ctxt: Enc<Mxe, DeliveryMaterial>) -> Enc<Mxe, DeliveryMaterial> {
+    pub fn deposit_key_v2(input_ctxt: Enc<Mxe, DeliveryMaterial>) -> Enc<Mxe, DeliveryMaterial> {
         let input = input_ctxt.to_arcis();
         input_ctxt.owner.from_arcis(input)
     }
 
     #[instruction]
-    pub fn evaluate_and_seal(
+    pub fn evaluate_and_seal_v2(
         input_ctxt: Enc<Mxe, DeliveryMaterial>,
         payment_verified: bool,
         product_active: bool,

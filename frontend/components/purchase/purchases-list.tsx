@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { type ProductMetadata } from "@arxcess/sdk";
-import { finalizeDeliveryWithCustody, getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, resolveListingCustodyMode } from "@/lib/arcium/client";
+import { createArciumDeliveryCommitmentHex, finalizeDeliveryWithCustody, getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, resolveListingCustodyMode, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
 import { createDeliveryMaterialDigestHex, unsealDeliveryMaterial } from "@/lib/crypto/delivery";
@@ -379,14 +379,11 @@ export function PurchasesList() {
     }
 
     const deliveryKeypair = keypair;
+    const custodyMode = resolveListingCustodyMode(product);
+    const canUseArciumPayload = custodyMode === "arcium" && Boolean(onchain?.arciumDeliveryReady);
 
-    if (onchain?.arciumDeliveryReady && !purchase.sealedKeyBoxBase64 && !onchain.sealedKeyBoxBase64) {
-      setError("Arcium delivery is ready on-chain, but browser reveal for the Arcium payload is not wired into this frontend yet.");
-      return;
-    }
-
-    if (!purchase.sealedKeyBoxBase64 && !onchain?.sealedKeyBoxBase64) {
-      setError("Sealed delivery is not ready yet.");
+    if (!canUseArciumPayload && !purchase.sealedKeyBoxBase64 && !onchain?.sealedKeyBoxBase64) {
+      setError(custodyMode === "arcium" ? "Arcium delivery callback has not settled on-chain yet." : "Sealed delivery is not ready yet.");
       return;
     }
 
@@ -430,21 +427,49 @@ export function PurchasesList() {
 
     try {
       stage = "resolve_payload";
-      if (purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64 && purchase.sealedKeyBoxBase64 !== onchain.sealedKeyBoxBase64) {
+      if (!canUseArciumPayload && purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64 && purchase.sealedKeyBoxBase64 !== onchain.sealedKeyBoxBase64) {
         setStatusMessage("The latest local finalized payload differs from the decoded on-chain payload. Using the local payload for this reveal.");
       }
 
-      const sealedKeyBoxBase64 = purchase.sealedKeyBoxBase64 ?? onchain?.sealedKeyBoxBase64;
+      let sealedKeyBoxBase64: string | undefined;
+      let deliveryMaterial: { contentKey: Uint8Array; iv: Uint8Array };
 
-      if (!sealedKeyBoxBase64) {
-        throw new Error("Sealed delivery payload is missing from both local state and on-chain purchase state.");
+      if (canUseArciumPayload) {
+        if (!onchain) {
+          throw new Error("Decoded on-chain purchase state is missing for Arcium reveal.");
+        }
+
+        const expectedCommitmentHex = await createArciumDeliveryCommitmentHex({
+          deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+          deliveryNonce: onchain.arciumDeliveryNonce,
+          deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
+        });
+
+        if (expectedCommitmentHex !== onchain.deliveryCommitmentHex) {
+          throw new Error("Arcium delivery commitment mismatch. The on-chain callback payload does not match the stored commitment.");
+        }
+
+        stage = "unseal_arcium";
+        deliveryMaterial = await revealArciumDeliveryMaterial({
+          keypair: deliveryKeypair,
+          deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+          deliveryNonce: onchain.arciumDeliveryNonce,
+          deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
+        });
+      } else {
+        sealedKeyBoxBase64 = purchase.sealedKeyBoxBase64 ?? onchain?.sealedKeyBoxBase64 ?? undefined;
+
+        if (!sealedKeyBoxBase64) {
+          throw new Error("Sealed delivery payload is missing from both local state and on-chain purchase state.");
+        }
+
+        stage = "unseal";
+        deliveryMaterial = unsealDeliveryMaterial({
+          sealedKeyBoxBase64,
+          keypair: deliveryKeypair
+        });
       }
 
-      stage = "unseal";
-      const deliveryMaterial = unsealDeliveryMaterial({
-        sealedKeyBoxBase64,
-        keypair: deliveryKeypair
-      });
       stage = "metadata";
       const metadataResponse = await fetch(product.metadataGatewayUrl, {
         method: "GET",
@@ -526,7 +551,7 @@ export function PurchasesList() {
       saveStoredPurchase({
         ...purchase,
         accessCount: purchase.accessCount + 1,
-        sealedKeyBoxBase64
+        sealedKeyBoxBase64: sealedKeyBoxBase64 ?? purchase.sealedKeyBoxBase64
       });
       refreshPurchases();
       setRevealedPurchaseId(purchaseIdHex);
@@ -537,6 +562,8 @@ export function PurchasesList() {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (message.includes("Failed to unseal delivery material")) {
         setError("Reveal failed because the buyer delivery keypair in this browser does not match the one used during checkout.");
+      } else if (message.includes("Arcium delivery commitment mismatch")) {
+        setError("Reveal blocked because the on-chain Arcium payload no longer matches the purchase delivery commitment.");
       } else if (message.includes("does not match the material the seller validated")) {
         setError("Reveal failed because the buyer opened a different delivery payload than the one the seller validated during finalize.");
       } else if (message.includes("invalid payload shape")) {
@@ -640,7 +667,7 @@ export function PurchasesList() {
                           : effectiveStatus === "pending_arcium"
                             ? "Seller queued confidential delivery and is waiting for the callback to settle on-chain."
                           : effectiveStatus === "delivered_arcium"
-                            ? "Delivery callback completed on-chain. Frontend reveal wiring is still pending."
+                            ? "Delivery callback completed on-chain. Reveal now decrypts the Arcium payload directly from purchase state."
                             : "Waiting for publisher delivery."}
                     </span>
                   </div>

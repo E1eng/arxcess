@@ -12,8 +12,8 @@ pub use errors::ArxcessError as ErrorCode;
 pub use instructions::*;
 use state::ProductState;
 
-pub const COMP_DEF_OFFSET_DEPOSIT_KEY: u32 = comp_def_offset("deposit_key");
-pub const COMP_DEF_OFFSET_EVALUATE_AND_SEAL: u32 = comp_def_offset("evaluate_and_seal");
+pub const COMP_DEF_OFFSET_DEPOSIT_KEY: u32 = comp_def_offset("deposit_key_v2");
+pub const COMP_DEF_OFFSET_EVALUATE_AND_SEAL: u32 = comp_def_offset("evaluate_and_seal_v2");
 
 declare_id!("sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk");
 
@@ -111,16 +111,16 @@ pub mod arxcess {
         request_evaluate_and_seal::handler(ctx, computation_offset, seal_nonce)
     }
 
-    #[arcium_callback(encrypted_ix = "deposit_key", auto_serialize = false)]
-    pub fn deposit_key_callback(
+    #[arcium_callback(encrypted_ix = "deposit_key_v2", auto_serialize = false)]
+    pub fn deposit_key_v2_callback(
         ctx: Context<DepositKeyCallback>,
         output: SignedComputationOutputs<DepositKeyRawOutput>,
     ) -> Result<()> {
         request_deposit_product_key::callback_handler(ctx, output)
     }
 
-    #[arcium_callback(encrypted_ix = "evaluate_and_seal", auto_serialize = false)]
-    pub fn evaluate_and_seal_callback(
+    #[arcium_callback(encrypted_ix = "evaluate_and_seal_v2", auto_serialize = false)]
+    pub fn evaluate_and_seal_v2_callback(
         ctx: Context<EvaluateAndSealCallback>,
         output: SignedComputationOutputs<EvaluateAndSealRawOutput>,
     ) -> Result<()> {
@@ -136,7 +136,7 @@ pub mod arxcess {
     }
 }
 
-#[init_computation_definition_accounts("deposit_key", payer)]
+#[init_computation_definition_accounts("deposit_key_v2", payer)]
 #[derive(Accounts)]
 pub struct InitDepositKeyCompDef<'info> {
     #[account(mut)]
@@ -162,7 +162,7 @@ pub struct InitDepositKeyCompDef<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[init_computation_definition_accounts("evaluate_and_seal", payer)]
+#[init_computation_definition_accounts("evaluate_and_seal_v2", payer)]
 #[derive(Accounts)]
 pub struct InitEvaluateAndSealCompDef<'info> {
     #[account(mut)]

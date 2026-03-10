@@ -231,7 +231,76 @@ export function SellerWorkbench() {
           computationOffset
         });
 
-        transaction = createTx.transaction.add(...stageTx.transaction.instructions, ...requestTx.transaction.instructions);
+        const publishSetupTransaction = createTx.transaction.add(...stageTx.transaction.instructions);
+        const setupBlockhash = await connection.getLatestBlockhash();
+
+        publishSetupTransaction.recentBlockhash = setupBlockhash.blockhash;
+        publishSetupTransaction.feePayer = publicKey;
+
+        setStatusMessage("Waiting for wallet approval to create the listing and stage Arcium material...");
+        const publishSetupSignature = await sendTransaction(publishSetupTransaction, connection);
+
+        setStatusMessage("Listing created. Waiting for on-chain confirmation before queueing Arcium custody...");
+        await confirmTransactionOrThrow({
+          connection,
+          signature: publishSetupSignature,
+          blockhash: setupBlockhash.blockhash,
+          lastValidBlockHeight: setupBlockhash.lastValidBlockHeight,
+          label: "Create product"
+        });
+
+        const requestBlockhash = await connection.getLatestBlockhash();
+
+        requestTx.transaction.recentBlockhash = requestBlockhash.blockhash;
+        requestTx.transaction.feePayer = publicKey;
+
+        setStatusMessage("Waiting for wallet approval to queue Arcium custody...");
+        const publishSignature = await sendTransaction(requestTx.transaction, connection);
+
+        setStatusMessage("Arcium custody queued. Waiting for on-chain confirmation...");
+        await confirmTransactionOrThrow({
+          connection,
+          signature: publishSignature,
+          blockhash: requestBlockhash.blockhash,
+          lastValidBlockHeight: requestBlockhash.lastValidBlockHeight,
+          label: "Queue Arcium custody"
+        });
+
+        listing.publishSignature = publishSignature;
+
+        let storedListing = listing;
+
+        if (hasSupabaseListingsPublicConfig()) {
+          setStatusMessage("Saving listing to shared Supabase catalog...");
+          try {
+            storedListing = await createMarketplaceListing(listing);
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Failed to create listing.";
+
+            if (!isMissingSupabaseListingsTableError(message)) {
+              throw cause;
+            }
+
+            setError("Supabase listings table is unavailable. The listing was stored locally only.");
+          }
+        }
+
+        if (custody.sellerDeliveryMaterial) {
+          saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
+        }
+        saveStoredProduct(storedListing);
+        setStatusMessage("Listing created and Arcium custody queued. Activate after the confidential callback settles on-chain.");
+
+        setResult({
+          listing: storedListing,
+          keyCommitmentHex: keyCommitmentHex ?? "",
+          vaultHandleHex: vaultHandleHex ?? "",
+          publishSignature
+        });
+
+        setForm(initialForm);
+        setFile(null);
+        return;
       } else {
         const legacy = await buildCreateListingTransaction({
           seller: publicKey,
@@ -292,7 +361,7 @@ export function SellerWorkbench() {
         saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
       }
       saveStoredProduct(storedListing);
-      setStatusMessage(custody.custodyMode === "arcium" ? "Listing created and Arcium custody queued. Activate after the confidential callback settles on-chain." : "Listing published successfully.");
+      setStatusMessage("Listing published successfully.");
 
       setResult({
         listing: storedListing,

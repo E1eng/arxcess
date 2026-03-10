@@ -317,7 +317,7 @@ async function main() {
     mxeAccount,
     addressLookupTable,
     instructionName: "init_deposit_key_comp_def",
-    circuitName: "deposit_key"
+    circuitName: "deposit_key_v2"
   }));
   results.push(await initCompDef({
     provider,
@@ -327,7 +327,7 @@ async function main() {
     mxeAccount,
     addressLookupTable,
     instructionName: "init_evaluate_and_seal_comp_def",
-    circuitName: "evaluate_and_seal"
+    circuitName: "evaluate_and_seal_v2"
   }));
 
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);

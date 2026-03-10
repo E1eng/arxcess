@@ -16,6 +16,7 @@ use std::convert::TryInto;
 const PACKED_DELIVERY_CIPHERTEXT_COUNT: usize = 2;
 
 use crate::{
+    ArciumSignerAccount,
     constants::{PRODUCT_STATUS_ACTIVE, PURCHASE_STATUS_PENDING_SEAL},
     errors::ArxcessError,
     events::{ArciumDeliveryComputationRequested, ArciumDeliverySettled},
@@ -35,9 +36,15 @@ pub struct RequestEvaluateAndSeal<'info> {
     pub purchase_state: Box<Account<'info, PurchaseState>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
-    /// CHECK: sign_pda_account is the fixed Arcium signer PDA derived from the current MXE program and only passed through to the Arcium CPI.
-    #[account(address = derive_sign_pda!())]
-    pub sign_pda_account: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = authority,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
     /// CHECK: mempool_account is constrained to the canonical Arcium mempool PDA and only forwarded into the Arcium CPI.
     #[account(mut, address = derive_mempool_pda!(mxe_account, ArxcessError::ClusterNotSet))]
     pub mempool_account: UncheckedAccount<'info>,
@@ -119,9 +126,10 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, se
     let args = ArgBuilder::new()
         .account(
             ctx.accounts.product_state.key(),
-            ProductState::ARCIUM_MXE_MATERIAL_OFFSET,
-            ProductState::ARCIUM_MXE_MATERIAL_LEN,
+            ProductState::ARCIUM_MXE_CIPHERTEXTS_OFFSET,
+            ProductState::ARCIUM_MXE_CIPHERTEXTS_LEN,
         )
+        .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
         .plaintext_bool(true)
         .plaintext_bool(true)
         .plaintext_bool(!ctx.accounts.purchase_state.is_revoked())
@@ -129,6 +137,8 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, se
         .x25519_pubkey(ctx.accounts.purchase_state.buyer_delivery_pubkey)
         .plaintext_u128(seal_nonce)
         .build();
+
+    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     queue_computation(
         ctx.accounts,
@@ -166,6 +176,8 @@ pub struct EvaluateAndSealCallback<'info> {
     /// CHECK: comp_def_account is constrained to the canonical computation-definition PDA for evaluate_and_seal and only included for callback validation.
     #[account(address = derive_comp_def_pda!(crate::COMP_DEF_OFFSET_EVALUATE_AND_SEAL))]
     pub comp_def_account: UncheckedAccount<'info>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     /// CHECK: computation_account is the Arcium computation PDA referenced by the callback and is only read by Arcium signature verification.
     pub computation_account: UncheckedAccount<'info>,
     pub cluster_account: Account<'info, Cluster>,
@@ -211,7 +223,7 @@ impl CallbackCompAccs for EvaluateAndSealCallback<'_> {
 
         Ok(CallbackInstruction {
             program_id: crate::ID_CONST,
-            discriminator: crate::instruction::EvaluateAndSealCallback::DISCRIMINATOR.to_vec(),
+            discriminator: crate::instruction::EvaluateAndSealV2Callback::DISCRIMINATOR.to_vec(),
             accounts,
         })
     }

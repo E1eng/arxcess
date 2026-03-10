@@ -22,6 +22,16 @@ const MAX_UPLOAD_PER_TX_BYTES = 814;
 const MAX_ACCOUNT_SIZE = 10485760;
 const MAX_EMBIGGEN_IX_PER_TX = 18;
 const RAW_ACCOUNT_OVERHEAD = 9;
+const COMP_DEFINITION_CONFIGS = [
+  {
+    instructionName: "init_deposit_key_comp_def",
+    circuitName: "deposit_key_v2"
+  },
+  {
+    instructionName: "init_evaluate_and_seal_comp_def",
+    circuitName: "evaluate_and_seal_v2"
+  }
+];
 
 function getUploadChunkSize() {
   const raw = Number(process.env.ARCIUM_UPLOAD_CHUNK_SIZE ?? "8");
@@ -309,26 +319,18 @@ async function main() {
   const addressLookupTable = getLookupTableAddress(program.programId, mxeInfo.lutOffsetSlot);
 
   const results = [];
-  results.push(await initCompDef({
-    provider,
-    program,
-    idl,
-    arciumProgram,
-    mxeAccount,
-    addressLookupTable,
-    instructionName: "init_deposit_key_comp_def",
-    circuitName: "deposit_key_v2"
-  }));
-  results.push(await initCompDef({
-    provider,
-    program,
-    idl,
-    arciumProgram,
-    mxeAccount,
-    addressLookupTable,
-    instructionName: "init_evaluate_and_seal_comp_def",
-    circuitName: "evaluate_and_seal_v2"
-  }));
+  for (const config of COMP_DEFINITION_CONFIGS) {
+    results.push(await initCompDef({
+      provider,
+      program,
+      idl,
+      arciumProgram,
+      mxeAccount,
+      addressLookupTable,
+      instructionName: config.instructionName,
+      circuitName: config.circuitName
+    }));
+  }
 
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
 }

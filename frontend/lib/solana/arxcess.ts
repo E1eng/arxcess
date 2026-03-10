@@ -207,6 +207,52 @@ export function derivePurchaseStateAddress(productState: PublicKey, purchaseIdHe
   return PublicKey.findProgramAddressSync([textEncoder.encode("purchase"), productState.toBytes(), purchaseIdBytes], programId)[0];
 }
 
+async function buildCreateProductInstruction(args: {
+  seller: PublicKey;
+  productIdHex: string;
+  metadataUri: string;
+  ciphertextCid: string;
+  ciphertextHashHex: string;
+  priceLamports: bigint;
+  fileSizeBytes: bigint;
+  licenseDurationSeconds: number;
+  maxAccessCount: number;
+  revocable: boolean;
+}) {
+  const programId = requireProgramId();
+  const treasury = requireTreasuryPublicKey();
+  const productIdBytes = assertFixedBytes("Product ID", hexToBytes(args.productIdHex), FIXED_ID_BYTES);
+  const ciphertextHashBytes = assertFixedBytes("Ciphertext hash", hexToBytes(args.ciphertextHashHex), FIXED_ID_BYTES);
+  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
+  const createProductData = concatBytes(
+    await getInstructionDiscriminator("create_product"),
+    productIdBytes,
+    encodeString(args.metadataUri),
+    encodeString(args.ciphertextCid),
+    ciphertextHashBytes,
+    encodeU64(args.priceLamports),
+    encodeU16(PROTOCOL_FEE_BPS),
+    encodeU64(args.fileSizeBytes),
+    encodeU64(BigInt(args.licenseDurationSeconds)),
+    encodeU32(args.maxAccessCount),
+    new Uint8Array([args.revocable ? 1 : 0])
+  );
+
+  return {
+    productState,
+    instruction: new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: args.seller, isSigner: true, isWritable: true },
+        { pubkey: treasury, isSigner: false, isWritable: false },
+        { pubkey: productState, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
+      ],
+      data: Buffer.from(createProductData)
+    })
+  };
+}
+
 export async function buildCreateListingTransaction(args: {
   seller: PublicKey;
   productIdHex: string;
@@ -222,38 +268,13 @@ export async function buildCreateListingTransaction(args: {
   revocable: boolean;
 }) {
   const programId = requireProgramId();
-  const treasury = requireTreasuryPublicKey();
-  const productIdBytes = assertFixedBytes("Product ID", hexToBytes(args.productIdHex), FIXED_ID_BYTES);
-  const ciphertextHashBytes = assertFixedBytes("Ciphertext hash", hexToBytes(args.ciphertextHashHex), FIXED_ID_BYTES);
   const vaultHandle = assertFixedBytes("Vault handle", hexToBytes(args.vaultHandleHex), FIXED_ID_BYTES);
   const keyCommitment = assertFixedBytes("Key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
-  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
-  const createProductData = concatBytes(
-    await getInstructionDiscriminator("create_product"),
-    productIdBytes,
-    encodeString(args.metadataUri),
-    encodeString(args.ciphertextCid),
-    ciphertextHashBytes,
-    encodeU64(args.priceLamports),
-    encodeU16(PROTOCOL_FEE_BPS),
-    encodeU64(args.fileSizeBytes),
-    encodeU64(BigInt(args.licenseDurationSeconds)),
-    encodeU32(args.maxAccessCount),
-    new Uint8Array([args.revocable ? 1 : 0])
-  );
+  const { productState, instruction: createProductInstruction } = await buildCreateProductInstruction(args);
   const depositProductKeyData = concatBytes(await getInstructionDiscriminator("deposit_product_key"), vaultHandle, keyCommitment);
   const activateProductData = await getInstructionDiscriminator("activate_product");
   const transaction = new Transaction().add(
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.seller, isSigner: true, isWritable: true },
-        { pubkey: treasury, isSigner: false, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: true },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
-      ],
-      data: Buffer.from(createProductData)
-    }),
+    createProductInstruction,
     new TransactionInstruction({
       programId,
       keys: [
@@ -294,36 +315,8 @@ export async function buildCreateProductTransaction(args: {
   maxAccessCount: number;
   revocable: boolean;
 }) {
-  const programId = requireProgramId();
-  const treasury = requireTreasuryPublicKey();
-  const productIdBytes = assertFixedBytes("Product ID", hexToBytes(args.productIdHex), FIXED_ID_BYTES);
-  const ciphertextHashBytes = assertFixedBytes("Ciphertext hash", hexToBytes(args.ciphertextHashHex), FIXED_ID_BYTES);
-  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
-  const createProductData = concatBytes(
-    await getInstructionDiscriminator("create_product"),
-    productIdBytes,
-    encodeString(args.metadataUri),
-    encodeString(args.ciphertextCid),
-    ciphertextHashBytes,
-    encodeU64(args.priceLamports),
-    encodeU16(PROTOCOL_FEE_BPS),
-    encodeU64(args.fileSizeBytes),
-    encodeU64(BigInt(args.licenseDurationSeconds)),
-    encodeU32(args.maxAccessCount),
-    new Uint8Array([args.revocable ? 1 : 0])
-  );
-  const transaction = new Transaction().add(
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.seller, isSigner: true, isWritable: true },
-        { pubkey: treasury, isSigner: false, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: true },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
-      ],
-      data: Buffer.from(createProductData)
-    })
-  );
+  const { productState, instruction } = await buildCreateProductInstruction(args);
+  const transaction = new Transaction().add(instruction);
 
   transaction.feePayer = args.seller;
 
@@ -349,7 +342,7 @@ export async function buildRequestDepositProductKeyTransaction(args: {
         { pubkey: args.seller, isSigner: true, isWritable: true },
         { pubkey: productState, isSigner: false, isWritable: true },
         { pubkey: arcium.mxeAccount, isSigner: false, isWritable: false },
-        { pubkey: arcium.signPdaAccount, isSigner: false, isWritable: false },
+        { pubkey: arcium.signPdaAccount, isSigner: false, isWritable: true },
         { pubkey: arcium.mempoolAccount, isSigner: false, isWritable: true },
         { pubkey: arcium.executingPool, isSigner: false, isWritable: true },
         { pubkey: arcium.computationAccount, isSigner: false, isWritable: true },
@@ -487,7 +480,7 @@ export async function buildRequestEvaluateAndSealTransaction(args: {
         { pubkey: productState, isSigner: false, isWritable: true },
         { pubkey: purchaseState, isSigner: false, isWritable: true },
         { pubkey: arcium.mxeAccount, isSigner: false, isWritable: false },
-        { pubkey: arcium.signPdaAccount, isSigner: false, isWritable: false },
+        { pubkey: arcium.signPdaAccount, isSigner: false, isWritable: true },
         { pubkey: arcium.mempoolAccount, isSigner: false, isWritable: true },
         { pubkey: arcium.executingPool, isSigner: false, isWritable: true },
         { pubkey: arcium.computationAccount, isSigner: false, isWritable: true },

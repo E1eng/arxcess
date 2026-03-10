@@ -37,4 +37,24 @@ mod circuits {
 
         (approved.reveal(), buyer.from_arcis(selected))
     }
+
+    #[instruction]
+    pub fn evaluate_and_seal_v3(
+        input_ctxt: Enc<Mxe, DeliveryMaterial>,
+        payment_verified: bool,
+        product_active: bool,
+        purchase_not_revoked: bool,
+        delivery_not_yet_finalized: bool,
+        buyer: Shared,
+    ) -> (bool, Enc<Shared, DeliveryMaterial>) {
+        let input = input_ctxt.to_arcis();
+        let approved = payment_verified && product_active && purchase_not_revoked && delivery_not_yet_finalized;
+        let selected = if approved {
+            input
+        } else {
+            Pack::new([0u8; 44])
+        };
+
+        (approved.reveal(), buyer.from_arcis(selected))
+    }
 }

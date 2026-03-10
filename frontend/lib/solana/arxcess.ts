@@ -13,7 +13,7 @@ const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPA
 const ARCIUM_FEE_POOL_ACCOUNT = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
 const ARCIUM_CLOCK_ACCOUNT = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
 const DEPOSIT_KEY_COMP_DEF_OFFSET = 192477128;
-const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 424405835;
+const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 3143075288;
 const OFFSET_BUFFER_SIZE = 4;
 const CLUSTER_ACC_SEED = "Cluster";
 const COMP_DEF_ACC_SEED = "ComputationDefinitionAccount";
@@ -502,6 +502,32 @@ export async function buildRequestEvaluateAndSealTransaction(args: {
     productState,
     purchaseState,
     transaction
+  };
+}
+
+export async function buildActivateProductTransaction(args: {
+  seller: PublicKey;
+  productIdHex: string;
+}) {
+  const programId = requireProgramId();
+  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
+  const activateProductData = await getInstructionDiscriminator("activate_product");
+  const transaction = new Transaction().add(
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: args.seller, isSigner: true, isWritable: false },
+        { pubkey: productState, isSigner: false, isWritable: true }
+      ],
+      data: Buffer.from(activateProductData)
+    })
+  );
+
+  transaction.feePayer = args.seller;
+
+  return {
+    transaction,
+    productState
   };
 }
 

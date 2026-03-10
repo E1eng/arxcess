@@ -93,6 +93,23 @@ export function ProductCatalog() {
     };
   }
 
+  function canPurchaseProduct(product: LocalProductListing, onchain: DecodedProductState | undefined) {
+    if (!onchain) {
+      return false;
+    }
+
+    if (product.custodyMode === "arcium") {
+      return onchain.statusLabel === "active";
+    }
+
+    return onchain.statusLabel === "active";
+  }
+
+  const visibleProducts = useMemo(
+    () => products.filter((product) => canPurchaseProduct(product, onchainProductStates[product.productIdHex])),
+    [onchainProductStates, products]
+  );
+
   async function preparePurchase(product: LocalProductListing) {
     if (!publicKey || !sendTransaction) {
       setError("Connect a wallet before buying on-chain.");
@@ -106,6 +123,13 @@ export function ProductCatalog() {
 
     if (!hasConfiguredTreasuryPublicKey()) {
       setError("Missing NEXT_PUBLIC_TREASURY_WALLET.");
+      return;
+    }
+
+    const onchain = onchainProductStates[product.productIdHex];
+
+    if (!canPurchaseProduct(product, onchain)) {
+      setError("This listing is not active on-chain yet. Wait until the seller finishes activation before buying.");
       return;
     }
 
@@ -196,16 +220,17 @@ export function ProductCatalog() {
         </div>
       ) : null}
 
-      {products.length === 0 ? (
+      {visibleProducts.length === 0 ? (
         <div className="card surface empty-state">
-          <strong>No products are available yet.</strong>
-          <span className="muted">Launch a listing once your storage and wallet environment are ready.</span>
+          <strong>No products are live right now.</strong>
+          <span className="muted">New listings appear here automatically after their on-chain activation is complete.</span>
         </div>
       ) : (
         <div className="catalog-grid">
-          {products.map((product) => {
+          {visibleProducts.map((product) => {
             const onchain = onchainProductStates[product.productIdHex];
             const statusCopy = resolveProductStatusCopy(product, onchain);
+            const canPurchase = canPurchaseProduct(product, onchain);
 
             return (
               <div key={product.productIdHex} className="card surface product-card">
@@ -247,7 +272,7 @@ export function ProductCatalog() {
                   </div>
                 </div>
                 <div className="row">
-                  <button className="button" type="button" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex}>
+                  <button className="button" type="button" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex || !canPurchase}>
                     {busyProductId === product.productIdHex ? "Processing..." : `Buy for ${product.priceSol} SOL`}
                   </button>
                 </div>

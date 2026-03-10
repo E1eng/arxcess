@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { AnchorProvider } from "@coral-xyz/anchor";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId, type ProductMetadata } from "@arxcess/sdk";
 import { getArciumFrontendBlockMessage, getConfiguredCustodyMode, isArciumFrontendRuntimeReady, prepareListingCustody } from "@/lib/arcium/client";
@@ -11,7 +11,8 @@ import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
-import { buildCreateListingTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
+import { fetchOnchainProductStates } from "@/lib/solana/account-state";
+import { buildActivateProductTransaction, buildCreateListingTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
@@ -40,6 +41,10 @@ function inferPreviewMode(file: File | null) {
   return "file" as const;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function SellerWorkbench() {
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet();
@@ -47,6 +52,7 @@ export function SellerWorkbench() {
   const [form, setForm] = useState(initialForm);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activatingResult, setActivatingResult] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
@@ -56,6 +62,8 @@ export function SellerWorkbench() {
         keyCommitmentHex: string;
         vaultHandleHex: string;
         publishSignature: string;
+        activationSignature: string | null;
+        activationRequired: boolean;
       }
     | null
   >(null);
@@ -65,6 +73,135 @@ export function SellerWorkbench() {
   const isArciumPublishBlocked = isArciumMode && !isArciumFrontendRuntimeReady("publish");
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
   const previewMode = useMemo(() => inferPreviewMode(file), [file]);
+
+  const activateListing = useCallback(async (listing: LocalProductListing) => {
+    if (!publicKey || !sendTransaction) {
+      throw new Error("Connect the seller wallet before activating the listing.");
+    }
+
+    const activateTx = await buildActivateProductTransaction({
+      seller: publicKey,
+      productIdHex: listing.productIdHex
+    });
+    const blockhash = await connection.getLatestBlockhash();
+
+    activateTx.transaction.recentBlockhash = blockhash.blockhash;
+    activateTx.transaction.feePayer = publicKey;
+
+    setStatusMessage("Waiting for wallet approval to activate the listing...");
+    const activationSignature = await sendTransaction(activateTx.transaction, connection);
+
+    setStatusMessage("Activation sent. Waiting for on-chain confirmation...");
+    await confirmTransactionOrThrow({
+      connection,
+      signature: activationSignature,
+      blockhash: blockhash.blockhash,
+      lastValidBlockHeight: blockhash.lastValidBlockHeight,
+      label: "Activate listing"
+    });
+
+    return activationSignature;
+  }, [connection, publicKey, sendTransaction]);
+
+  const waitForArciumCustodyReady = useCallback(async (listing: LocalProductListing, maxPolls = 18, delayMs = 5000) => {
+    for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+      const states = await fetchOnchainProductStates(connection, [listing]);
+      const onchain = states[listing.productIdHex];
+
+      if (onchain?.statusLabel === "active") {
+        return {
+          alreadyActive: true,
+          ready: true
+        };
+      }
+
+      if (onchain?.arciumCustodyReady) {
+        return {
+          alreadyActive: false,
+          ready: true
+        };
+      }
+
+      await sleep(delayMs);
+    }
+
+    return {
+      alreadyActive: false,
+      ready: false
+    };
+  }, [connection]);
+
+  const publishListingToCatalog = useCallback(async (listing: LocalProductListing) => {
+    let storedListing = listing;
+
+    if (hasSupabaseListingsPublicConfig()) {
+      setStatusMessage("Saving listing to shared catalog...");
+      try {
+        storedListing = await createMarketplaceListing(listing);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "Failed to create listing.";
+
+        if (!isMissingSupabaseListingsTableError(message)) {
+          throw cause;
+        }
+
+        setError("Supabase listings table is unavailable. The listing was stored locally only.");
+      }
+    }
+
+    saveStoredProduct(storedListing);
+    return storedListing;
+  }, []);
+
+  const handleActivateResultListing = useCallback(async () => {
+    if (!result) {
+      return;
+    }
+
+    setActivatingResult(true);
+    setError(null);
+
+    try {
+      const readiness = await waitForArciumCustodyReady(result.listing, 1, 0);
+
+      if (readiness.alreadyActive) {
+        const storedListing = await publishListingToCatalog(result.listing);
+        setResult((current) =>
+          current
+            ? {
+                ...current,
+                listing: storedListing,
+                activationRequired: false
+              }
+            : current
+        );
+        setStatusMessage("Listing is active and now live in Explore.");
+        return;
+      }
+
+      if (!readiness.ready) {
+        throw new Error("Arcium custody has not settled on-chain yet. Try activating again shortly.");
+      }
+
+      const activationSignature = await activateListing(result.listing);
+      const storedListing = await publishListingToCatalog(result.listing);
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              listing: storedListing,
+              activationRequired: false,
+              activationSignature
+            }
+          : current
+      );
+      setStatusMessage("Listing activated successfully and is now live in Explore.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to activate listing.");
+    } finally {
+      setActivatingResult(false);
+    }
+  }, [activateListing, publishListingToCatalog, result, waitForArciumCustodyReady]);
 
   useEffect(() => {
     if (!file || !file.type.startsWith("image/")) {
@@ -79,6 +216,49 @@ export function SellerWorkbench() {
       URL.revokeObjectURL(objectUrl);
     };
   }, [file]);
+
+  useEffect(() => {
+    if (!result?.activationRequired || activatingResult) {
+      return;
+    }
+
+    const pendingListing = result.listing;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    async function continueActivation() {
+      try {
+        const readiness = await waitForArciumCustodyReady(pendingListing, 1, 0);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (readiness.ready || readiness.alreadyActive) {
+          await handleActivateResultListing();
+          return;
+        }
+
+        timeoutId = window.setTimeout(() => {
+          void continueActivation();
+        }, 5000);
+      } catch {
+        timeoutId = window.setTimeout(() => {
+          void continueActivation();
+        }, 5000);
+      }
+    }
+
+    void continueActivation();
+
+    return () => {
+      cancelled = true;
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [activatingResult, handleActivateResultListing, result, waitForArciumCustodyReady]);
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     const value =
@@ -267,35 +447,36 @@ export function SellerWorkbench() {
         });
 
         listing.publishSignature = publishSignature;
-
         let storedListing = listing;
-
-        if (hasSupabaseListingsPublicConfig()) {
-          setStatusMessage("Saving listing to shared Supabase catalog...");
-          try {
-            storedListing = await createMarketplaceListing(listing);
-          } catch (cause) {
-            const message = cause instanceof Error ? cause.message : "Failed to create listing.";
-
-            if (!isMissingSupabaseListingsTableError(message)) {
-              throw cause;
-            }
-
-            setError("Supabase listings table is unavailable. The listing was stored locally only.");
-          }
-        }
 
         if (custody.sellerDeliveryMaterial) {
           saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
         }
-        saveStoredProduct(storedListing);
-        setStatusMessage("Listing created and Arcium custody queued. Activate after the confidential callback settles on-chain.");
+        setStatusMessage("Waiting for the confidential callback to settle before activation...");
+
+        const readiness = await waitForArciumCustodyReady(storedListing, 12, 5000);
+        let activationSignature: string | null = null;
+        let activationRequired = false;
+
+        if (readiness.alreadyActive) {
+          storedListing = await publishListingToCatalog(storedListing);
+          setStatusMessage("Listing published successfully and is now live in Explore.");
+        } else if (readiness.ready) {
+          activationSignature = await activateListing(storedListing);
+          storedListing = await publishListingToCatalog(storedListing);
+          setStatusMessage("Listing published successfully and is now live in Explore.");
+        } else {
+          activationRequired = true;
+          setStatusMessage("Listing is being finalized. It will appear in Explore after activation completes.");
+        }
 
         setResult({
           listing: storedListing,
           keyCommitmentHex: keyCommitmentHex ?? "",
           vaultHandleHex: vaultHandleHex ?? "",
-          publishSignature
+          publishSignature,
+          activationSignature,
+          activationRequired
         });
 
         setForm(initialForm);
@@ -367,7 +548,9 @@ export function SellerWorkbench() {
         listing: storedListing,
         keyCommitmentHex: keyCommitmentHex ?? "",
         vaultHandleHex: vaultHandleHex ?? "",
-        publishSignature
+        publishSignature,
+        activationSignature: null,
+        activationRequired: false
       });
 
       setForm(initialForm);
@@ -533,8 +716,19 @@ export function SellerWorkbench() {
         <div className="callout callout--success">
           <div>
             <strong>Listing published</strong>
-            <span className="muted">{result.listing.title} is now live in Explore. New orders will show up in Library until delivery is ready.</span>
+            <span className="muted">
+              {result.activationRequired
+                ? `${result.listing.title} is waiting for seller activation after the confidential callback settles.`
+                : `${result.listing.title} is now live in Explore. New orders will show up in Library until delivery is ready.`}
+            </span>
           </div>
+          {result.activationRequired ? (
+            <div className="row">
+              <button className="button" type="button" onClick={() => void handleActivateResultListing()} disabled={activatingResult}>
+                {activatingResult ? "Activating..." : "Activate listing"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />

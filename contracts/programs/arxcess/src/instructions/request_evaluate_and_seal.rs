@@ -30,9 +30,9 @@ use crate::{
 pub struct RequestEvaluateAndSeal<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(mut)]
-    pub product_state: Box<Account<'info, ProductState>>,
     #[account(mut, address = purchase_state.product)]
+    pub product_state: Box<Account<'info, ProductState>>,
+    #[account(mut)]
     pub purchase_state: Box<Account<'info, PurchaseState>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
@@ -111,7 +111,7 @@ impl<'info> QueueCompAccs<'info> for RequestEvaluateAndSeal<'info> {
     }
 }
 
-pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, seal_nonce: u128) -> Result<()> {
+pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, _seal_nonce: u128) -> Result<()> {
     let authority = ctx.accounts.authority.key();
 
     require!(authority == ctx.accounts.product_state.seller || authority == ctx.accounts.product_state.treasury, ArxcessError::Unauthorized);
@@ -124,18 +124,18 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, se
     );
 
     let args = ArgBuilder::new()
+        .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
         .account(
             ctx.accounts.product_state.key(),
             ProductState::ARCIUM_MXE_CIPHERTEXTS_OFFSET,
             ProductState::ARCIUM_MXE_CIPHERTEXTS_LEN,
         )
-        .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
         .plaintext_bool(true)
         .plaintext_bool(true)
         .plaintext_bool(!ctx.accounts.purchase_state.is_revoked())
         .plaintext_bool(ctx.accounts.purchase_state.status == PURCHASE_STATUS_PENDING_SEAL)
         .x25519_pubkey(ctx.accounts.purchase_state.buyer_delivery_pubkey)
-        .plaintext_u128(seal_nonce)
+        .plaintext_u128(_seal_nonce)
         .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
@@ -223,7 +223,7 @@ impl CallbackCompAccs for EvaluateAndSealCallback<'_> {
 
         Ok(CallbackInstruction {
             program_id: crate::ID_CONST,
-            discriminator: crate::instruction::EvaluateAndSealV2Callback::DISCRIMINATOR.to_vec(),
+            discriminator: crate::instruction::EvaluateAndSealV3Callback::DISCRIMINATOR.to_vec(),
             accounts,
         })
     }

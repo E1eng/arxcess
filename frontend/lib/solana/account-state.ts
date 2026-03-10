@@ -51,6 +51,10 @@ function dataViewFromBytes(bytes: Uint8Array) {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
+function hasReadableRange(bytes: Uint8Array, offset: number, length: number) {
+  return offset + length <= bytes.length;
+}
+
 export interface DecodedProductState {
   status: number;
   statusLabel: string;
@@ -98,11 +102,11 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
   offset += 1;
   const totalSales = readU64(view, offset);
   offset += 8 + 8 + 8;
-  const arciumCustodyReady = readU8(view, offset) === 1;
-  offset += 1;
-  const arciumDepositComputationOffset = readU64(view, offset);
-  offset += 8;
-  const arciumDepositRequestedAt = readI64(view, offset);
+  const arciumCustodyReady = hasReadableRange(data, offset, 1) ? readU8(view, offset) === 1 : false;
+  offset += hasReadableRange(data, offset, 1) ? 1 : 0;
+  const arciumDepositComputationOffset = hasReadableRange(data, offset, 8) ? readU64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const arciumDepositRequestedAt = hasReadableRange(data, offset, 8) ? readI64(view, offset) : 0;
 
   return {
     status,
@@ -136,27 +140,27 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   offset += 8;
   const accessCount = readU32(view, offset);
   offset += 4;
-  const maxAccessCount = readU32(view, offset);
-  offset += 4;
-  const revokedAt = readI64(view, offset);
-  offset += 8;
-  const createdAt = readI64(view, offset);
-  offset += 8;
-  const deliveredAt = readI64(view, offset);
-  offset += 8;
-  const arciumDeliveryReady = readU8(view, offset) === 1;
-  offset += 1;
-  const arciumEvaluateComputationOffset = readU64(view, offset);
-  offset += 8;
-  const arciumEvaluateRequestedAt = readI64(view, offset);
-  offset += 8;
-  const arciumDeliveryEncryptionKey = data.slice(offset, offset + 32);
-  offset += 32;
-  const arciumDeliveryNonce = readU128(view, offset);
-  offset += 16;
+  const maxAccessCount = hasReadableRange(data, offset, 4) ? readU32(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 4) ? 4 : 0;
+  const revokedAt = hasReadableRange(data, offset, 8) ? readI64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const createdAt = hasReadableRange(data, offset, 8) ? readI64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const deliveredAt = hasReadableRange(data, offset, 8) ? readI64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const arciumDeliveryReady = hasReadableRange(data, offset, 1) ? readU8(view, offset) === 1 : false;
+  offset += hasReadableRange(data, offset, 1) ? 1 : 0;
+  const arciumEvaluateComputationOffset = hasReadableRange(data, offset, 8) ? readU64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const arciumEvaluateRequestedAt = hasReadableRange(data, offset, 8) ? readI64(view, offset) : 0;
+  offset += hasReadableRange(data, offset, 8) ? 8 : 0;
+  const arciumDeliveryEncryptionKey = hasReadableRange(data, offset, 32) ? data.slice(offset, offset + 32) : new Uint8Array(32);
+  offset += hasReadableRange(data, offset, 32) ? 32 : 0;
+  const arciumDeliveryNonce = hasReadableRange(data, offset, 16) ? readU128(view, offset) : 0n;
+  offset += hasReadableRange(data, offset, 16) ? 16 : 0;
   const arciumDeliveryCiphertexts = Array.from({ length: ARCIUM_DELIVERY_CIPHERTEXT_COUNT }, (_, index) => {
     const start = offset + (index * 32);
-    return data.slice(start, start + 32);
+    return hasReadableRange(data, start, 32) ? data.slice(start, start + 32) : new Uint8Array(32);
   });
 
   return {
@@ -185,14 +189,22 @@ export async function fetchOnchainPurchaseStates(
   connection: Connection,
   purchases: Array<{ purchaseIdHex: string; listing: LocalProductListing }>
 ) {
-  const addresses = purchases.map(({ purchaseIdHex, listing }) => {
-    const seller = new PublicKey(listing.sellerWallet!);
-    const productState = deriveProductStateAddress(seller, listing.productIdHex);
-    return {
-      purchaseIdHex,
-      productState,
-      purchaseState: derivePurchaseStateAddress(productState, purchaseIdHex)
-    };
+  const addresses = purchases.flatMap(({ purchaseIdHex, listing }) => {
+    if (!listing.sellerWallet) {
+      return [];
+    }
+
+    try {
+      const seller = new PublicKey(listing.sellerWallet);
+      const productState = deriveProductStateAddress(seller, listing.productIdHex);
+      return [{
+        purchaseIdHex,
+        productState,
+        purchaseState: derivePurchaseStateAddress(productState, purchaseIdHex)
+      }];
+    } catch {
+      return [];
+    }
   });
 
   const accounts = await connection.getMultipleAccountsInfo(addresses.map((entry) => entry.purchaseState));
@@ -203,7 +215,10 @@ export async function fetchOnchainPurchaseStates(
     if (!account) {
       return;
     }
-    output[entry.purchaseIdHex] = decodePurchaseState(account.data);
+
+    try {
+      output[entry.purchaseIdHex] = decodePurchaseState(account.data);
+    } catch {}
   });
 
   return output;

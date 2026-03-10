@@ -1,47 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchMarketplaceListings, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
 import { LocalProductListing, listStoredProducts, saveStoredProduct } from "@/lib/storage/marketplace";
 
 export function useProducts() {
   const [products, setProducts] = useState<LocalProductListing[]>([]);
 
+  const loadProducts = useCallback(async () => {
+    if (!hasSupabaseListingsPublicConfig()) {
+      setProducts(listStoredProducts());
+      return;
+    }
+
+    try {
+      const listings = await fetchMarketplaceListings();
+
+      listings.forEach((listing) => {
+        saveStoredProduct(listing);
+      });
+      setProducts(listings);
+    } catch {
+      setProducts(listStoredProducts());
+    }
+  }, []);
+
   useEffect(() => {
     let ignore = false;
 
-    async function loadProducts() {
-      if (!hasSupabaseListingsPublicConfig()) {
-        if (!ignore) {
-          setProducts(listStoredProducts());
-        }
-
+    async function syncProducts() {
+      if (ignore) {
         return;
       }
 
-      try {
-        const listings = await fetchMarketplaceListings();
-
-        if (!ignore) {
-          listings.forEach((listing) => {
-            saveStoredProduct(listing);
-          });
-          setProducts(listings);
-        }
-      } catch {
-        if (!ignore) {
-          setProducts(listStoredProducts());
-        }
-      }
+      await loadProducts();
     }
 
-    void loadProducts();
+    void syncProducts();
+
+    const interval = window.setInterval(() => {
+      void syncProducts();
+    }, 10000);
+
+    const handleFocus = () => {
+      void syncProducts();
+    };
+
+    window.addEventListener("focus", handleFocus);
 
     return () => {
       ignore = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [loadProducts]);
+
   return {
-    products
+    products,
+    refreshProducts: loadProducts
   };
 }

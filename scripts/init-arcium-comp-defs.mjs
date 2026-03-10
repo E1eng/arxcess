@@ -29,7 +29,7 @@ const COMP_DEFINITION_CONFIGS = [
   },
   {
     instructionName: "init_evaluate_and_seal_comp_def",
-    circuitName: "evaluate_and_seal_v2"
+    circuitName: "evaluate_and_seal_v3"
   }
 ];
 

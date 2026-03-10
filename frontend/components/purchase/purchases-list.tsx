@@ -95,8 +95,20 @@ export function PurchasesList() {
 
     void loadOnchainStates();
 
+    const interval = window.setInterval(() => {
+      void loadOnchainStates();
+    }, 10000);
+
+    const handleFocus = () => {
+      void loadOnchainStates();
+    };
+
+    window.addEventListener("focus", handleFocus);
+
     return () => {
       ignore = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
     };
   }, [connection, purchaseCards]);
 
@@ -160,8 +172,27 @@ export function PurchasesList() {
 
     try {
       const onchain = onchainPurchaseStates[purchaseIdHex];
+      const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
 
       if (custodyMode === "arcium") {
+        if (!onchain) {
+          throw new Error("On-chain purchase state is not available yet. Wait for Library to refresh, then try finalizing again.");
+        }
+
+        if (effectiveStatus === "pending_arcium") {
+          setStatusMessage("Arcium delivery is already queued. Wait for the confidential callback to settle on-chain.");
+          return;
+        }
+
+        if (effectiveStatus === "delivered_arcium" || effectiveStatus === "delivered") {
+          setStatusMessage("Delivery is already finalized. The buyer can reveal it now.");
+          return;
+        }
+
+        if (onchain.statusLabel !== "pending_seal") {
+          throw new Error(`Cannot queue Arcium delivery from purchase status ${onchain.statusLabel}.`);
+        }
+
         const computationOffset = randomBigInt(8);
         const sealNonce = randomBigInt(16);
         const { transaction } = await buildRequestEvaluateAndSealTransaction({
@@ -174,6 +205,7 @@ export function PurchasesList() {
         const latestBlockhash = await connection.getLatestBlockhash();
 
         transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = publicKey;
 
         const finalizeSignature = await sendTransaction(transaction, connection);
 
@@ -248,6 +280,7 @@ export function PurchasesList() {
       const latestBlockhash = await connection.getLatestBlockhash();
 
       transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = publicKey;
 
       const finalizeSignature = await sendTransaction(transaction, connection);
 
@@ -704,7 +737,7 @@ export function PurchasesList() {
                           {busyPurchaseId === purchase.purchaseIdHex ? "Finalizing..." : "Finalize delivery"}
                         </button>
                       ) : null}
-                      {isPurchaseWallet && effectiveStatus === "delivered" ? (
+                      {isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium") ? (
                         <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
                         </button>

@@ -13,8 +13,6 @@ use arcium_client::idl::arcium::{
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 
-const PACKED_DELIVERY_CIPHERTEXT_COUNT: usize = 2;
-
 use crate::{
     ArciumSignerAccount,
     constants::{PRODUCT_STATUS_ACTIVE, PURCHASE_STATUS_PENDING_SEAL},
@@ -24,6 +22,8 @@ use crate::{
     ID,
     ID_CONST,
 };
+
+const PACKED_DELIVERY_CIPHERTEXT_COUNT: usize = 2;
 
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
@@ -242,10 +242,10 @@ fn parse_shared_material(bytes: &[u8]) -> Result<(bool, [u8; 32], u128, [[u8; 32
     let nonce = u128::from_le_bytes(bytes[33..49].try_into().map_err(|_| error!(ArxcessError::InvalidDeliveryPayload))?);
     let mut ciphertexts = [[0u8; 32]; PACKED_DELIVERY_CIPHERTEXT_COUNT];
 
-    for (index, ciphertext) in ciphertexts.iter_mut().enumerate() {
+    for index in 0..PACKED_DELIVERY_CIPHERTEXT_COUNT {
         let start = 49 + (index * 32);
         let end = start + 32;
-        ciphertext.copy_from_slice(&bytes[start..end]);
+        ciphertexts[index].copy_from_slice(&bytes[start..end]);
     }
 
     Ok((approved, encryption_key, nonce, ciphertexts))

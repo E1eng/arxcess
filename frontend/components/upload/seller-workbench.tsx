@@ -5,18 +5,18 @@ import { AnchorProvider } from "@coral-xyz/anchor";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId, type ProductMetadata } from "@arxcess/sdk";
-import { getArciumFrontendBlockMessage, getConfiguredCustodyMode, isArciumFrontendRuntimeReady, prepareListingCustody } from "@/lib/arcium/client";
+import { getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, prepareListingCustody } from "@/lib/arcium/client";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
 import { fetchOnchainProductStates } from "@/lib/solana/account-state";
-import { buildActivateProductTransaction, buildCreateListingTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
+import { buildActivateProductTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
-import { saveStoredSellerDeliveryMaterial, type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
+import { type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
 import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
 
 const initialForm = {
@@ -60,7 +60,6 @@ export function SellerWorkbench() {
     | {
         listing: LocalProductListing;
         keyCommitmentHex: string;
-        vaultHandleHex: string;
         publishSignature: string;
         activationSignature: string | null;
         activationRequired: boolean;
@@ -68,9 +67,7 @@ export function SellerWorkbench() {
     | null
   >(null);
   const sellerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-  const configuredCustodyMode = getConfiguredCustodyMode();
-  const isArciumMode = configuredCustodyMode === "arcium";
-  const isArciumPublishBlocked = isArciumMode && !isArciumFrontendRuntimeReady("publish");
+  const isArciumPublishBlocked = !isArciumFrontendRuntimeReady();
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
   const previewMode = useMemo(() => inferPreviewMode(file), [file]);
 
@@ -340,7 +337,7 @@ export function SellerWorkbench() {
 
       setStatusMessage("Uploading metadata to Pinata...");
       const metadataUpload = await uploadJsonToPinata(metadata, `${productIdHex}-metadata`);
-      setStatusMessage(configuredCustodyMode === "arcium" ? "Preparing Arcium custody..." : "Preparing explicit browser custody...");
+      setStatusMessage("Preparing Arcium custody...");
       const custody = await prepareListingCustody({
         productIdHex,
         sellerWallet: publicKey.toBase58(),
@@ -372,151 +369,77 @@ export function SellerWorkbench() {
           revocable: form.revocable
         },
         custodyMode: custody.custodyMode,
-        vaultHandleHex: custody.vaultHandleHex,
         keyCommitmentHex: custody.keyCommitmentHex,
         createdAt: new Date().toISOString()
       };
 
-      let transaction;
-      let keyCommitmentHex = custody.keyCommitmentHex;
-      let vaultHandleHex = custody.vaultHandleHex;
-
-      if (custody.custodyMode === "arcium") {
-        if (!custody.arciumPublishMaterial) {
-          throw new Error("Arcium publish material is missing.");
-        }
-
-        const computationOffset = BigInt(Date.now());
-        const createTx = await buildCreateProductTransaction({
-          seller: publicKey,
-          productIdHex,
-          metadataUri: metadataUpload.gatewayUrl,
-          ciphertextCid: ciphertextUpload.cid,
-          ciphertextHashHex: encrypted.ciphertextHashHex,
-          priceLamports: solToLamports(form.priceSol),
-          fileSizeBytes: BigInt(encrypted.sizeBytes),
-          licenseDurationSeconds,
-          maxAccessCount,
-          revocable: form.revocable
-        });
-        const stageTx = await buildStageProductArciumMaterialTransaction({
-          seller: publicKey,
-          productIdHex,
-          encryptedKeyNonce: custody.arciumPublishMaterial.encryptedKeyNonce,
-          encryptedKeyCiphertexts: custody.arciumPublishMaterial.encryptedKeyCiphertexts
-        });
-        const requestTx = await buildRequestDepositProductKeyTransaction({
-          seller: publicKey,
-          productIdHex,
-          computationOffset
-        });
-
-        const publishSetupTransaction = createTx.transaction.add(...stageTx.transaction.instructions);
-        const setupBlockhash = await connection.getLatestBlockhash();
-
-        publishSetupTransaction.recentBlockhash = setupBlockhash.blockhash;
-        publishSetupTransaction.feePayer = publicKey;
-
-        setStatusMessage("Waiting for wallet approval to create the listing and stage Arcium material...");
-        const publishSetupSignature = await sendTransaction(publishSetupTransaction, connection);
-
-        setStatusMessage("Listing created. Waiting for on-chain confirmation before queueing Arcium custody...");
-        await confirmTransactionOrThrow({
-          connection,
-          signature: publishSetupSignature,
-          blockhash: setupBlockhash.blockhash,
-          lastValidBlockHeight: setupBlockhash.lastValidBlockHeight,
-          label: "Create product"
-        });
-
-        const requestBlockhash = await connection.getLatestBlockhash();
-
-        requestTx.transaction.recentBlockhash = requestBlockhash.blockhash;
-        requestTx.transaction.feePayer = publicKey;
-
-        setStatusMessage("Waiting for wallet approval to queue Arcium custody...");
-        const publishSignature = await sendTransaction(requestTx.transaction, connection);
-
-        setStatusMessage("Arcium custody queued. Waiting for on-chain confirmation...");
-        await confirmTransactionOrThrow({
-          connection,
-          signature: publishSignature,
-          blockhash: requestBlockhash.blockhash,
-          lastValidBlockHeight: requestBlockhash.lastValidBlockHeight,
-          label: "Queue Arcium custody"
-        });
-
-        listing.publishSignature = publishSignature;
-        let storedListing = listing;
-
-        if (custody.sellerDeliveryMaterial) {
-          saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
-        }
-        setStatusMessage("Waiting for the confidential callback to settle before activation...");
-
-        const readiness = await waitForArciumCustodyReady(storedListing, 12, 5000);
-        let activationSignature: string | null = null;
-        let activationRequired = false;
-
-        if (readiness.alreadyActive) {
-          storedListing = await publishListingToCatalog(storedListing);
-          setStatusMessage("Listing published successfully and is now live in Explore.");
-        } else if (readiness.ready) {
-          activationSignature = await activateListing(storedListing);
-          storedListing = await publishListingToCatalog(storedListing);
-          setStatusMessage("Listing published successfully and is now live in Explore.");
-        } else {
-          activationRequired = true;
-          setStatusMessage("Listing is being finalized. It will appear in Explore after activation completes.");
-        }
-
-        setResult({
-          listing: storedListing,
-          keyCommitmentHex: keyCommitmentHex ?? "",
-          vaultHandleHex: vaultHandleHex ?? "",
-          publishSignature,
-          activationSignature,
-          activationRequired
-        });
-
-        setForm(initialForm);
-        setFile(null);
-        return;
-      } else {
-        const legacy = await buildCreateListingTransaction({
-          seller: publicKey,
-          productIdHex,
-          metadataUri: metadataUpload.gatewayUrl,
-          ciphertextCid: ciphertextUpload.cid,
-          ciphertextHashHex: encrypted.ciphertextHashHex,
-          priceLamports: solToLamports(form.priceSol),
-          fileSizeBytes: BigInt(encrypted.sizeBytes),
-          vaultHandleHex: custody.vaultHandleHex!,
-          keyCommitmentHex: custody.keyCommitmentHex!,
-          licenseDurationSeconds,
-          maxAccessCount,
-          revocable: form.revocable
-        });
-
-        transaction = legacy.transaction;
-        keyCommitmentHex = legacy.keyCommitmentHex;
-        vaultHandleHex = legacy.vaultHandleHex;
+      if (!custody.arciumPublishMaterial) {
+        throw new Error("Arcium publish material is missing.");
       }
 
-      const latestBlockhash = await connection.getLatestBlockhash();
+      if (!custody.keyCommitmentHex) {
+        throw new Error("Arcium publish is missing the product key commitment.");
+      }
 
-      transaction.recentBlockhash = latestBlockhash.blockhash;
+      const computationOffset = BigInt(Date.now());
+      const createTx = await buildCreateProductTransaction({
+        seller: publicKey,
+        productIdHex,
+        metadataUri: metadataUpload.gatewayUrl,
+        ciphertextCid: ciphertextUpload.cid,
+        ciphertextHashHex: encrypted.ciphertextHashHex,
+        priceLamports: solToLamports(form.priceSol),
+        fileSizeBytes: BigInt(encrypted.sizeBytes),
+        licenseDurationSeconds,
+        maxAccessCount,
+        revocable: form.revocable
+      });
+      const stageTx = await buildStageProductArciumMaterialTransaction({
+        seller: publicKey,
+        productIdHex,
+        encryptedKeyNonce: custody.arciumPublishMaterial.encryptedKeyNonce,
+        encryptedKeyCiphertexts: custody.arciumPublishMaterial.encryptedKeyCiphertexts,
+        keyCommitmentHex: custody.keyCommitmentHex
+      });
+      const requestTx = await buildRequestDepositProductKeyTransaction({
+        seller: publicKey,
+        productIdHex,
+        computationOffset
+      });
 
-      setStatusMessage("Waiting for wallet approval to publish on-chain...");
-      const publishSignature = await sendTransaction(transaction, connection);
+      const publishSetupTransaction = createTx.transaction.add(...stageTx.transaction.instructions);
+      const setupBlockhash = await connection.getLatestBlockhash();
 
-      setStatusMessage("Transaction sent. Waiting for on-chain confirmation...");
+      publishSetupTransaction.recentBlockhash = setupBlockhash.blockhash;
+      publishSetupTransaction.feePayer = publicKey;
+
+      setStatusMessage("Waiting for wallet approval to create the listing and stage Arcium material...");
+      const publishSetupSignature = await sendTransaction(publishSetupTransaction, connection);
+
+      setStatusMessage("Listing created. Waiting for on-chain confirmation before queueing Arcium custody...");
+      await confirmTransactionOrThrow({
+        connection,
+        signature: publishSetupSignature,
+        blockhash: setupBlockhash.blockhash,
+        lastValidBlockHeight: setupBlockhash.lastValidBlockHeight,
+        label: "Create product"
+      });
+
+      const requestBlockhash = await connection.getLatestBlockhash();
+
+      requestTx.transaction.recentBlockhash = requestBlockhash.blockhash;
+      requestTx.transaction.feePayer = publicKey;
+
+      setStatusMessage("Waiting for wallet approval to queue Arcium custody...");
+      const publishSignature = await sendTransaction(requestTx.transaction, connection);
+
+      setStatusMessage("Arcium custody queued. Waiting for on-chain confirmation...");
       await confirmTransactionOrThrow({
         connection,
         signature: publishSignature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-        label: "Publish listing"
+        blockhash: requestBlockhash.blockhash,
+        lastValidBlockHeight: requestBlockhash.lastValidBlockHeight,
+        label: "Queue Arcium custody"
       });
 
       listing.publishSignature = publishSignature;
@@ -538,19 +461,30 @@ export function SellerWorkbench() {
         }
       }
 
-      if (custody.sellerDeliveryMaterial) {
-        saveStoredSellerDeliveryMaterial(productIdHex, custody.sellerDeliveryMaterial);
+      setStatusMessage("Waiting for the confidential callback to settle before activation...");
+
+      const readiness = await waitForArciumCustodyReady(storedListing, 12, 5000);
+      let activationSignature: string | null = null;
+      let activationRequired = false;
+
+      if (readiness.alreadyActive) {
+        setStatusMessage("Listing published successfully and is now live in Explore.");
+      } else if (readiness.ready) {
+        activationSignature = await activateListing(storedListing);
+        setStatusMessage("Listing published successfully and is now live in Explore.");
+      } else {
+        activationRequired = true;
+        setStatusMessage("Listing is being finalized. It will appear in Explore after activation completes.");
       }
+
       saveStoredProduct(storedListing);
-      setStatusMessage("Listing published successfully.");
 
       setResult({
         listing: storedListing,
-        keyCommitmentHex: keyCommitmentHex ?? "",
-        vaultHandleHex: vaultHandleHex ?? "",
+        keyCommitmentHex: custody.keyCommitmentHex,
         publishSignature,
-        activationSignature: null,
-        activationRequired: false
+        activationSignature,
+        activationRequired
       });
 
       setForm(initialForm);
@@ -574,7 +508,7 @@ export function SellerWorkbench() {
           </div>
           <div className="page-intro__meta">
             <span className="badge badge--neutral">Connected wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
-            <span className="badge badge--neutral">Custody: {isArciumMode ? "Arcium configured" : "Browser demo"}</span>
+            <span className="badge badge--neutral">Custody: Arcium</span>
           </div>
         </div>
       </section>

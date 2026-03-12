@@ -2,24 +2,50 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { type ProductMetadata } from "@arxcess/sdk";
-import { createArciumDeliveryCommitmentHex, finalizeDeliveryWithCustody, getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, resolveListingCustodyMode, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
+import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
-import { createDeliveryMaterialDigestHex, unsealDeliveryMaterial } from "@/lib/crypto/delivery";
+import { type DeliveryKeypair } from "@/lib/crypto/delivery";
 import { hasConfiguredProgramId } from "@/lib/anchor/client";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { useProducts } from "@/hooks/use-products";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { usePurchases } from "@/hooks/use-purchases";
-import { fetchOnchainPurchaseStates, type DecodedPurchaseState } from "@/lib/solana/account-state";
-import { buildConsumeAccessTransaction, buildFinalizeDeliveryTransaction, buildRequestEvaluateAndSealTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
-import { clearStoredMarketplaceState, getStoredPurchase, getStoredSellerDeliveryMaterial, saveStoredPurchase } from "@/lib/storage/marketplace";
-import { base64ToBytes } from "@/lib/utils/bytes";
+import { fetchOnchainProductStates, fetchOnchainPurchaseStates, type DecodedProductState, type DecodedPurchaseState } from "@/lib/solana/account-state";
+import { buildConsumeAccessTransaction, buildRequestEvaluateAndSealTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
+import { getStoredPurchase, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { formatOptionalDateTime, truncateValue } from "@/lib/utils/format";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function pinataGatewayUrlFromCid(cid: string) {
+  return `https://gateway.pinata.cloud/ipfs/${cid}`;
+}
+
+function resolveMetadataUrl(product: { metadataGatewayUrl: string }, onchainProduct: DecodedProductState | undefined) {
+  return onchainProduct?.metadataUri || product.metadataGatewayUrl;
+}
+
+function resolveCiphertextUrl(
+  product: { ciphertextGatewayUrl: string },
+  onchainPurchase: DecodedPurchaseState | undefined,
+  onchainProduct: DecodedProductState | undefined
+) {
+  if (onchainPurchase?.ciphertextCidSnapshot) {
+    return pinataGatewayUrlFromCid(onchainPurchase.ciphertextCidSnapshot);
+  }
+
+  if (onchainProduct?.ciphertextCid) {
+    return pinataGatewayUrlFromCid(onchainProduct.ciphertextCid);
+  }
+
+  return product.ciphertextGatewayUrl;
+}
+
+function resolveCiphertextHashHex(product: { ciphertextHashHex: string }, onchainProduct: DecodedProductState | undefined) {
+  return onchainProduct?.ciphertextHashHex || product.ciphertextHashHex;
 }
 
 function randomBigInt(byteLength: number) {
@@ -43,6 +69,7 @@ export function PurchasesList() {
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
   const [revealedPurchaseId, setRevealedPurchaseId] = useState<string | null>(null);
   const purchaseCards = useMemo(
@@ -53,15 +80,8 @@ export function PurchasesList() {
       })),
     [products, purchases]
   );
-  const hasBrowserDemoPurchases = useMemo(
-    () => purchaseCards.some(({ product }) => resolveListingCustodyMode(product) === "browser_demo"),
-    [purchaseCards]
-  );
-  const hasArciumPurchases = useMemo(
-    () => purchaseCards.some(({ product }) => resolveListingCustodyMode(product) === "arcium"),
-    [purchaseCards]
-  );
-  const isArciumFinalizeBlocked = hasArciumPurchases && !isArciumFrontendRuntimeReady("finalize");
+  const hasPurchases = purchaseCards.length > 0;
+  const isArciumFinalizeBlocked = hasPurchases && !isArciumFrontendRuntimeReady();
 
   useEffect(() => {
     let ignore = false;
@@ -82,12 +102,17 @@ export function PurchasesList() {
       }
 
       try {
-        const states = await fetchOnchainPurchaseStates(connection, resolvable);
+        const [purchaseStates, productStates] = await Promise.all([
+          fetchOnchainPurchaseStates(connection, resolvable),
+          fetchOnchainProductStates(connection, resolvable.map((entry) => entry.listing))
+        ]);
         if (!ignore) {
-          setOnchainPurchaseStates(states);
+          setOnchainPurchaseStates(purchaseStates);
+          setOnchainProductStates(productStates);
         }
       } catch {
         if (!ignore) {
+          setOnchainProductStates({});
           setOnchainPurchaseStates({});
         }
       }
@@ -152,130 +177,45 @@ export function PurchasesList() {
       return;
     }
 
-    const custodyMode = resolveListingCustodyMode(product);
-
-    if (custodyMode === "arcium" && !isArciumFrontendRuntimeReady("finalize")) {
+    if (!isArciumFrontendRuntimeReady()) {
       setError(getArciumFrontendBlockMessage("finalize"));
-      return;
-    }
-
-    const deliveryMaterial = custodyMode === "browser_demo" ? getStoredSellerDeliveryMaterial(product.productIdHex) : null;
-
-    if (custodyMode === "browser_demo" && !deliveryMaterial) {
-      setError("Delivery material is missing in this browser. Publish and finalize from the same environment for this demo.");
       return;
     }
 
     setBusyPurchaseId(purchaseIdHex);
     setError(null);
-    setStatusMessage(custodyMode === "arcium" ? "Preparing Arcium delivery finalization..." : "Preparing explicit browser custody finalization...");
+    setStatusMessage("Preparing Arcium delivery finalization...");
 
     try {
       const onchain = onchainPurchaseStates[purchaseIdHex];
       const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
 
-      if (custodyMode === "arcium") {
-        if (!onchain) {
-          throw new Error("On-chain purchase state is not available yet. Wait for Library to refresh, then try finalizing again.");
-        }
+      if (!onchain) {
+        throw new Error("On-chain purchase state is not available yet. Wait for Library to refresh, then try finalizing again.");
+      }
 
-        if (effectiveStatus === "pending_arcium") {
-          setStatusMessage("Arcium delivery is already queued. Wait for the confidential callback to settle on-chain.");
-          return;
-        }
-
-        if (effectiveStatus === "delivered_arcium" || effectiveStatus === "delivered") {
-          setStatusMessage("Delivery is already finalized. The buyer can reveal it now.");
-          return;
-        }
-
-        if (onchain.statusLabel !== "pending_seal") {
-          throw new Error(`Cannot queue Arcium delivery from purchase status ${onchain.statusLabel}.`);
-        }
-
-        const computationOffset = randomBigInt(8);
-        const sealNonce = randomBigInt(16);
-        const { transaction } = await buildRequestEvaluateAndSealTransaction({
-          authority: publicKey,
-          listing: product,
-          purchaseIdHex,
-          computationOffset,
-          sealNonce
-        });
-        const latestBlockhash = await connection.getLatestBlockhash();
-
-        transaction.recentBlockhash = latestBlockhash.blockhash;
-        transaction.feePayer = publicKey;
-
-        const finalizeSignature = await sendTransaction(transaction, connection);
-
-        await confirmTransactionOrThrow({
-          connection,
-          signature: finalizeSignature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-          label: "Queue Arcium delivery"
-        });
-
-        saveStoredPurchase({
-          ...purchase,
-          finalizeSignature,
-          deliveryMode: "arcium",
-          status: "pending_seal"
-        });
-        refreshPurchases();
-        setStatusMessage("Arcium delivery request queued. Wait for the confidential callback to settle on-chain.");
+      if (effectiveStatus === "pending_arcium") {
+        setStatusMessage("Arcium delivery is already queued. Wait for the confidential callback to settle on-chain.");
         return;
       }
 
-      const metadataResponse = await fetch(product.metadataGatewayUrl, {
-        method: "GET",
-        cache: "no-store"
-      });
-
-      if (!metadataResponse.ok) {
-        throw new Error("Failed to fetch listing metadata before finalize.");
+      if (effectiveStatus === "delivered_arcium" || effectiveStatus === "delivered") {
+        setStatusMessage("Delivery is already finalized. The buyer can reveal it now.");
+        return;
       }
 
-      const metadata = (await metadataResponse.json()) as ProductMetadata;
-      const ciphertextResponse = await fetch(product.ciphertextGatewayUrl, {
-        method: "GET",
-        cache: "no-store"
-      });
-
-      if (!ciphertextResponse.ok) {
-        throw new Error("Failed to fetch ciphertext before finalize.");
+      if (onchain.statusLabel !== "pending_seal") {
+        throw new Error(`Cannot queue Arcium delivery from purchase status ${onchain.statusLabel}.`);
       }
 
-      const ciphertext = new Uint8Array(await ciphertextResponse.arrayBuffer());
-      const ciphertextHashHex = await sha256Hex(ciphertext);
-
-      if (ciphertextHashHex !== product.ciphertextHashHex) {
-        throw new Error("Finalize blocked because the downloaded ciphertext does not match the listing hash.");
-      }
-
-      const deliveryEvaluation = await finalizeDeliveryWithCustody({
-        custodyMode,
-        buyerDeliveryPublicKeyBase64: purchase.buyerDeliveryPublicKeyBase64,
-        ciphertextHashHex: product.ciphertextHashHex,
-        ciphertextBytes: ciphertext,
-        metadataIvBase64: metadata.ivBase64 ?? null,
-        productIdHex: product.productIdHex,
-        purchaseIdHex,
-        purchaseNotRevoked: !(onchain?.revokedAt || purchase.revokedAt),
-        productActive: true,
-        paymentVerified: Boolean(purchase.transactionSignature),
-        sellerWallet: product.sellerWallet,
-        deliveryNotYetFinalized: (onchain?.statusLabel ?? purchase.status) !== "delivered",
-        sellerDeliveryMaterial: deliveryMaterial
-      });
-      const { transaction } = await buildFinalizeDeliveryTransaction({
+      const computationOffset = randomBigInt(8);
+      const sealNonce = randomBigInt(16);
+      const { transaction } = await buildRequestEvaluateAndSealTransaction({
         authority: publicKey,
         listing: product,
         purchaseIdHex,
-        approvalFlag: deliveryEvaluation.approvalFlag,
-        sealedKeyBoxBase64: deliveryEvaluation.sealedKeyBoxBase64,
-        deliveryCommitmentHex: deliveryEvaluation.deliveryCommitmentHex
+        computationOffset,
+        sealNonce
       });
       const latestBlockhash = await connection.getLatestBlockhash();
 
@@ -294,15 +234,12 @@ export function PurchasesList() {
 
       saveStoredPurchase({
         ...purchase,
-        status: "delivered",
         finalizeSignature,
-        sealedKeyBoxBase64: deliveryEvaluation.sealedKeyBoxBase64,
-        deliveryCommitmentHex: deliveryEvaluation.deliveryCommitmentHex,
-        deliveryMaterialDigestHex: deliveryEvaluation.deliveryMaterialDigestHex,
-        deliveryMode: deliveryEvaluation.custodyMode
+        deliveryMode: "arcium",
+        status: "pending_seal"
       });
       refreshPurchases();
-      setStatusMessage("Delivery finalized successfully. The purchaser can now reveal and download the asset from Library.");
+      setStatusMessage("Arcium delivery request queued. Wait for the confidential callback to settle on-chain.");
     } catch (cause) {
       setStatusMessage(null);
       setError(cause instanceof Error ? cause.message : "Failed to finalize delivery.");
@@ -384,6 +321,7 @@ export function PurchasesList() {
     const purchase = resolvePurchase(purchaseIdHex);
     const product = purchase ? products.find((entry) => entry.productIdHex === purchase.productIdHex) ?? null : null;
     const onchain = onchainPurchaseStates[purchaseIdHex];
+    const onchainProduct = product ? onchainProductStates[product.productIdHex] : undefined;
     let stage = "prepare";
 
     if (!purchase || !product) {
@@ -411,12 +349,10 @@ export function PurchasesList() {
       return;
     }
 
-    const deliveryKeypair = keypair;
-    const custodyMode = resolveListingCustodyMode(product);
-    const canUseArciumPayload = custodyMode === "arcium" && Boolean(onchain?.arciumDeliveryReady);
+    const deliveryKeypair: DeliveryKeypair = keypair;
 
-    if (!canUseArciumPayload && !purchase.sealedKeyBoxBase64 && !onchain?.sealedKeyBoxBase64) {
-      setError(custodyMode === "arcium" ? "Arcium delivery callback has not settled on-chain yet." : "Sealed delivery is not ready yet.");
+    if (!onchain?.arciumDeliveryReady) {
+      setError("Arcium delivery callback has not settled on-chain yet.");
       return;
     }
 
@@ -460,72 +396,27 @@ export function PurchasesList() {
 
     try {
       stage = "resolve_payload";
-      if (!canUseArciumPayload && purchase.sealedKeyBoxBase64 && onchain?.sealedKeyBoxBase64 && purchase.sealedKeyBoxBase64 !== onchain.sealedKeyBoxBase64) {
-        setStatusMessage("The latest local finalized payload differs from the decoded on-chain payload. Using the local payload for this reveal.");
-      }
-
-      let sealedKeyBoxBase64: string | undefined;
-      let deliveryMaterial: { contentKey: Uint8Array; iv: Uint8Array };
-
-      if (canUseArciumPayload) {
-        if (!onchain) {
-          throw new Error("Decoded on-chain purchase state is missing for Arcium reveal.");
-        }
-
-        const expectedCommitmentHex = await createArciumDeliveryCommitmentHex({
-          deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
-          deliveryNonce: onchain.arciumDeliveryNonce,
-          deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
-        });
-
-        if (expectedCommitmentHex !== onchain.deliveryCommitmentHex) {
-          throw new Error("Arcium delivery commitment mismatch. The on-chain callback payload does not match the stored commitment.");
-        }
-
-        stage = "unseal_arcium";
-        deliveryMaterial = await revealArciumDeliveryMaterial({
-          keypair: deliveryKeypair,
-          deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
-          deliveryNonce: onchain.arciumDeliveryNonce,
-          deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
-        });
-      } else {
-        sealedKeyBoxBase64 = purchase.sealedKeyBoxBase64 ?? onchain?.sealedKeyBoxBase64 ?? undefined;
-
-        if (!sealedKeyBoxBase64) {
-          throw new Error("Sealed delivery payload is missing from both local state and on-chain purchase state.");
-        }
-
-        stage = "unseal";
-        deliveryMaterial = unsealDeliveryMaterial({
-          sealedKeyBoxBase64,
-          keypair: deliveryKeypair
-        });
-      }
-
-      stage = "metadata";
-      const metadataResponse = await fetch(product.metadataGatewayUrl, {
-        method: "GET",
-        cache: "no-store"
+      const expectedCommitmentHex = await createArciumDeliveryCommitmentHex({
+        deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+        deliveryNonce: onchain.arciumDeliveryNonce,
+        deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
       });
 
-      if (!metadataResponse.ok) {
-        throw new Error("Failed to fetch listing metadata from storage.");
+      if (expectedCommitmentHex !== onchain.deliveryCommitmentHex) {
+        throw new Error("Arcium delivery commitment mismatch. The on-chain callback payload does not match the stored commitment.");
       }
 
-      const metadata = (await metadataResponse.json()) as ProductMetadata;
-      const iv = metadata.ivBase64 ? base64ToBytes(metadata.ivBase64) : deliveryMaterial.iv;
-      const deliveryMaterialDigestHex = await createDeliveryMaterialDigestHex({
-        contentKey: deliveryMaterial.contentKey,
-        iv
+      stage = "unseal_arcium";
+      const deliveryMaterial = await revealArciumDeliveryMaterial({
+        keypair: deliveryKeypair,
+        deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+        deliveryNonce: onchain.arciumDeliveryNonce,
+        deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
       });
-
-      if (purchase.deliveryMaterialDigestHex && purchase.deliveryMaterialDigestHex !== deliveryMaterialDigestHex) {
-        throw new Error("Buyer unsealed delivery material does not match the material the seller validated during finalize.");
-      }
 
       stage = "ciphertext";
-      const response = await fetch(product.ciphertextGatewayUrl, {
+      const ciphertextUrl = resolveCiphertextUrl(product, onchain, onchainProduct);
+      const response = await fetch(ciphertextUrl, {
         method: "GET",
         cache: "no-store"
       });
@@ -536,8 +427,9 @@ export function PurchasesList() {
 
       const ciphertext = new Uint8Array(await response.arrayBuffer());
       const ciphertextHashHex = await sha256Hex(ciphertext);
+      const expectedCiphertextHashHex = resolveCiphertextHashHex(product, onchainProduct);
 
-      if (ciphertextHashHex !== product.ciphertextHashHex) {
+      if (ciphertextHashHex !== expectedCiphertextHashHex) {
         throw new Error("Downloaded ciphertext does not match the listing hash for this purchase.");
       }
 
@@ -545,7 +437,7 @@ export function PurchasesList() {
       const plaintext = await decryptCiphertext({
         ciphertext,
         contentKey: deliveryMaterial.contentKey,
-        iv
+        iv: deliveryMaterial.iv
       });
       stage = "consume_access";
       const { transaction } = await buildConsumeAccessTransaction({
@@ -583,8 +475,7 @@ export function PurchasesList() {
       URL.revokeObjectURL(objectUrl);
       saveStoredPurchase({
         ...purchase,
-        accessCount: purchase.accessCount + 1,
-        sealedKeyBoxBase64: sealedKeyBoxBase64 ?? purchase.sealedKeyBoxBase64
+        accessCount: purchase.accessCount + 1
       });
       refreshPurchases();
       setRevealedPurchaseId(purchaseIdHex);
@@ -597,10 +488,6 @@ export function PurchasesList() {
         setError("Reveal failed because the buyer delivery keypair in this browser does not match the one used during checkout.");
       } else if (message.includes("Arcium delivery commitment mismatch")) {
         setError("Reveal blocked because the on-chain Arcium payload no longer matches the purchase delivery commitment.");
-      } else if (message.includes("does not match the material the seller validated")) {
-        setError("Reveal failed because the buyer opened a different delivery payload than the one the seller validated during finalize.");
-      } else if (message.includes("invalid payload shape")) {
-        setError("Reveal failed because the finalized delivery payload is malformed. The seller likely finalized with mismatched delivery material.");
       } else if (message.includes("Consume access failed on-chain")) {
         setError(`Reveal decrypted successfully, but consume access failed on-chain. ${message}`);
       } else if (stage === "wallet_approval" || stage === "confirm_consume_access" || stage === "download") {
@@ -610,23 +497,13 @@ export function PurchasesList() {
         message.includes("Downloaded ciphertext does not match") ||
         message.includes("Unexpected error")
       ) {
-        setError("Reveal failed while decrypting the downloaded ciphertext. The sealed delivery material or encrypted file may not match this purchase.");
+        setError("Reveal failed while decrypting the downloaded ciphertext. The on-chain Arcium payload does not match this encrypted file.");
       } else {
         setError(message || "Failed to reveal asset.");
       }
     } finally {
       setBusyPurchaseId(null);
     }
-  }
-
-  function resetLocalState() {
-    clearStoredMarketplaceState();
-    setError(null);
-    setStatusMessage(null);
-    setBusyPurchaseId(null);
-    setRevealedPurchaseId(null);
-    setOnchainPurchaseStates({});
-    window.location.reload();
   }
 
   return (
@@ -640,12 +517,7 @@ export function PurchasesList() {
           </div>
           <div className="page-intro__meta">
             <span className="badge badge--neutral">Connected wallet: {connectedWallet ? truncateValue(connectedWallet, 12, 10) : "not connected"}</span>
-            <span className="badge badge--neutral">Custody: {hasBrowserDemoPurchases ? "browser demo" : hasArciumPurchases ? "Arcium configured" : "No purchases yet"}</span>
-            {hasBrowserDemoPurchases ? (
-              <button className="button secondary" type="button" onClick={resetLocalState}>
-                Reset demo
-              </button>
-            ) : null}
+            <span className="badge badge--neutral">Custody: {hasPurchases ? "Arcium" : "No purchases yet"}</span>
           </div>
         </div>
       </section>
@@ -727,7 +599,7 @@ export function PurchasesList() {
                     </div>
                     <div className="detail-row">
                       <span className="muted">Custody</span>
-                      <strong>{resolveListingCustodyMode(product) === "arcium" ? "Arcium" : "Browser demo"}</strong>
+                      <strong>Arcium</strong>
                     </div>
                   </div>
                   {isPublishingWallet || isPurchaseWallet ? (

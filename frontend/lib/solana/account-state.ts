@@ -6,6 +6,7 @@ import { bytesToBase64, bytesToHex } from "@/lib/utils/bytes";
 const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBKEY_BYTES = 32;
 const ARCIUM_DELIVERY_CIPHERTEXT_COUNT = 2;
+const textDecoder = new TextDecoder();
 const PRODUCT_STATUS_LABELS: Record<number, string> = {
   0: "draft",
   1: "active",
@@ -55,9 +56,18 @@ function hasReadableRange(bytes: Uint8Array, offset: number, length: number) {
   return offset + length <= bytes.length;
 }
 
+function decodeFixedUtf8(bytes: Uint8Array) {
+  const zeroIndex = bytes.indexOf(0);
+  const readable = zeroIndex >= 0 ? bytes.slice(0, zeroIndex) : bytes;
+  return textDecoder.decode(readable).trim();
+}
+
 export interface DecodedProductState {
   status: number;
   statusLabel: string;
+  metadataUri: string;
+  ciphertextCid: string;
+  ciphertextHashHex: string;
   licenseDurationSeconds: number;
   maxAccessCount: number;
   revocable: boolean;
@@ -73,6 +83,7 @@ export interface DecodedPurchaseState {
   entitlementFlag: number;
   sealedKeyLen: number;
   sealedKeyBoxBase64: string | null;
+  ciphertextCidSnapshot: string;
   deliveryCommitmentHex: string;
   expiresAt: number;
   accessCount: number;
@@ -93,7 +104,13 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
   let offset = ACCOUNT_DISCRIMINATOR_BYTES;
   offset += 1 + 32 + PUBKEY_BYTES + PUBKEY_BYTES + 8 + 2;
   const status = readU8(view, offset);
-  offset += 1 + 200 + 100 + 32 + 8 + 32 + 32;
+  offset += 1;
+  const metadataUri = decodeFixedUtf8(data.slice(offset, offset + 200));
+  offset += 200;
+  const ciphertextCid = decodeFixedUtf8(data.slice(offset, offset + 100));
+  offset += 100;
+  const ciphertextHashHex = bytesToHex(data.slice(offset, offset + 32));
+  offset += 32 + 8 + 32 + 32;
   const licenseDurationSeconds = readI64(view, offset);
   offset += 8;
   const maxAccessCount = readU32(view, offset);
@@ -111,6 +128,9 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
   return {
     status,
     statusLabel: PRODUCT_STATUS_LABELS[status] ?? `unknown-${status}`,
+    metadataUri,
+    ciphertextCid,
+    ciphertextHashHex,
     licenseDurationSeconds,
     maxAccessCount,
     revocable,
@@ -133,6 +153,7 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
   offset += 2;
   const sealedKeyBox = data.slice(offset, offset + 256);
   offset += 256;
+  const ciphertextCidSnapshot = decodeFixedUtf8(data.slice(offset, offset + 100));
   offset += 100;
   const deliveryCommitment = data.slice(offset, offset + 32);
   offset += 32;
@@ -169,6 +190,7 @@ export function decodePurchaseState(data: Uint8Array): DecodedPurchaseState {
     entitlementFlag,
     sealedKeyLen,
     sealedKeyBoxBase64: sealedKeyLen > 0 ? bytesToBase64(sealedKeyBox.slice(0, sealedKeyLen)) : null,
+    ciphertextCidSnapshot,
     deliveryCommitmentHex: bytesToHex(deliveryCommitment),
     expiresAt,
     accessCount,

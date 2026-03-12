@@ -67,8 +67,9 @@ pub mod arxcess {
         ctx: Context<StageProductArciumMaterial>,
         encrypted_key_nonce: u128,
         encrypted_key_ciphertexts: [[u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT],
+        key_commitment: [u8; 32],
     ) -> Result<()> {
-        stage_product_arcium_material::handler(ctx, encrypted_key_nonce, encrypted_key_ciphertexts)
+        stage_product_arcium_material::handler(ctx, encrypted_key_nonce, encrypted_key_ciphertexts, key_commitment)
     }
 
     pub fn request_deposit_product_key(

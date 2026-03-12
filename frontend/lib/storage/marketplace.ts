@@ -1,19 +1,12 @@
 import { DeliveryKeypair } from "@/lib/crypto/delivery";
 
-export interface SellerDeliveryMaterial {
-  contentKeyBase64: string;
-  ivBase64: string;
-  ciphertextHashHex?: string;
-  keyCommitmentHex?: string;
-}
-
 export interface ListingAccessPolicy {
   licenseDurationSeconds: number;
   maxAccessCount: number;
   revocable: boolean;
 }
 
-export type ListingCustodyMode = "browser_demo" | "arcium";
+export type ListingCustodyMode = "arcium";
 
 export interface LocalProductListing {
   productIdHex: string;
@@ -30,8 +23,7 @@ export interface LocalProductListing {
   fileSizeBytes: number;
   sellerWallet: string | null;
   policy: ListingAccessPolicy;
-  custodyMode?: ListingCustodyMode;
-  vaultHandleHex?: string;
+  custodyMode?: "arcium";
   keyCommitmentHex?: string;
   createdAt: string;
   publishSignature?: string;
@@ -51,16 +43,12 @@ export interface LocalPurchaseIntent {
   createdAt: string;
   transactionSignature?: string;
   finalizeSignature?: string;
-  sealedKeyBoxBase64?: string;
-  deliveryCommitmentHex?: string;
-  deliveryMaterialDigestHex?: string;
-  deliveryMode?: ListingCustodyMode;
+  deliveryMode?: "arcium";
 }
 
 const PRODUCT_STORAGE_KEY = "arxcess.products";
 const PURCHASE_STORAGE_KEY = "arxcess.purchases";
 const DELIVERY_KEY_STORAGE_KEY = "arxcess.delivery-keypairs";
-const SELLER_DELIVERY_STORAGE_KEY = "arxcess.seller-delivery-material";
 
 function readJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") {
@@ -123,19 +111,6 @@ export function saveStoredDeliveryKeypair(wallet: string | null, keypair: Delive
   });
 }
 
-export function getStoredSellerDeliveryMaterial(productIdHex: string): SellerDeliveryMaterial | null {
-  const materials = readJson<Record<string, SellerDeliveryMaterial>>(SELLER_DELIVERY_STORAGE_KEY, {});
-  return materials[productIdHex] ?? null;
-}
-
-export function saveStoredSellerDeliveryMaterial(productIdHex: string, material: SellerDeliveryMaterial) {
-  const materials = readJson<Record<string, SellerDeliveryMaterial>>(SELLER_DELIVERY_STORAGE_KEY, {});
-  writeJson(SELLER_DELIVERY_STORAGE_KEY, {
-    ...materials,
-    [productIdHex]: material
-  });
-}
-
 export function clearStoredMarketplaceState() {
   if (typeof window === "undefined") {
     return;
@@ -144,5 +119,4 @@ export function clearStoredMarketplaceState() {
   window.localStorage.removeItem(PRODUCT_STORAGE_KEY);
   window.localStorage.removeItem(PURCHASE_STORAGE_KEY);
   window.localStorage.removeItem(DELIVERY_KEY_STORAGE_KEY);
-  window.localStorage.removeItem(SELLER_DELIVERY_STORAGE_KEY);
 }

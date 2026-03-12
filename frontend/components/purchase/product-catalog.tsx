@@ -64,8 +64,6 @@ export function ProductCatalog() {
   }, [connection, products]);
 
   function resolveProductStatusCopy(product: LocalProductListing, onchain: DecodedProductState | undefined) {
-    const custodyMode = product.custodyMode ?? "browser_demo";
-
     if (!onchain) {
       return {
         badge: "Encrypted listing",
@@ -73,14 +71,14 @@ export function ProductCatalog() {
       };
     }
 
-    if (custodyMode === "arcium" && onchain.statusLabel === "draft" && onchain.arciumDepositComputationOffset !== 0 && !onchain.arciumCustodyReady) {
+    if (onchain.statusLabel === "draft" && onchain.arciumDepositComputationOffset !== 0 && !onchain.arciumCustodyReady) {
       return {
         badge: "Arcium custody queued",
         subtitle: "Publisher queued confidential custody and is waiting for the callback to settle before activation."
       };
     }
 
-    if (custodyMode === "arcium" && onchain.statusLabel === "draft" && onchain.arciumCustodyReady) {
+    if (onchain.statusLabel === "draft" && onchain.arciumCustodyReady) {
       return {
         badge: "Custody ready",
         subtitle: "Confidential custody is ready on-chain. The publisher can activate this listing next."
@@ -96,10 +94,6 @@ export function ProductCatalog() {
   function canPurchaseProduct(product: LocalProductListing, onchain: DecodedProductState | undefined) {
     if (!onchain) {
       return false;
-    }
-
-    if (product.custodyMode === "arcium") {
-      return onchain.statusLabel === "active";
     }
 
     return onchain.statusLabel === "active";
@@ -181,7 +175,7 @@ export function ProductCatalog() {
         revokedAt: null,
         createdAt: createdAt.toISOString(),
         transactionSignature,
-        deliveryMode: product.custodyMode ?? "browser_demo"
+        deliveryMode: "arcium"
       };
 
       saveStoredPurchase(purchase);

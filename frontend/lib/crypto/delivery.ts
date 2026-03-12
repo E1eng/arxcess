@@ -1,5 +1,5 @@
 import nacl from "tweetnacl";
-import { base64ToBytes, bytesToBase64, bytesToHex, concatBytes } from "@/lib/utils/bytes";
+import { base64ToBytes, bytesToBase64 } from "@/lib/utils/bytes";
 
 export interface DeliveryKeypair {
   publicKeyBase64: string;
@@ -52,52 +52,4 @@ export function sealDeliveryMaterial(args: {
   sealedKeyBox.set(sealedPayload, ephemeralKeypair.publicKey.length + nonce.length);
 
   return bytesToBase64(sealedKeyBox);
-}
-
-export function unsealDeliveryMaterial(args: {
-  sealedKeyBoxBase64: string;
-  keypair: DeliveryKeypair;
-}) {
-  const sealedKeyBox = base64ToBytes(args.sealedKeyBoxBase64);
-  const { secretKey } = decodeDeliveryKeypair(args.keypair);
-  const publicKeyLength = nacl.box.publicKeyLength;
-  const nonceLength = nacl.box.nonceLength;
-
-  if (sealedKeyBox.length <= publicKeyLength + nonceLength) {
-    throw new Error("Sealed key box is too short");
-  }
-
-  const senderPublicKey = sealedKeyBox.slice(0, publicKeyLength);
-  const nonce = sealedKeyBox.slice(publicKeyLength, publicKeyLength + nonceLength);
-  const payload = sealedKeyBox.slice(publicKeyLength + nonceLength);
-  const opened = nacl.box.open(payload, nonce, senderPublicKey, secretKey);
-
-  if (!opened) {
-    throw new Error("Failed to unseal delivery material");
-  }
-
-  if (opened.length !== DELIVERY_CONTENT_KEY_BYTES + DELIVERY_IV_BYTES) {
-    throw new Error("Unsealed delivery material has an invalid payload shape");
-  }
-
-  return {
-    contentKey: opened.slice(0, DELIVERY_CONTENT_KEY_BYTES),
-    iv: opened.slice(DELIVERY_CONTENT_KEY_BYTES)
-  };
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-export async function createDeliveryMaterialDigestHex(args: { contentKey: Uint8Array; iv: Uint8Array }) {
-  const payload = concatBytes(args.contentKey, args.iv);
-  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
-  return bytesToHex(new Uint8Array(digest));
-}
-
-export async function createDeliveryCommitmentHex(sealedKeyBoxBase64: string) {
-  const sealedKeyBox = base64ToBytes(sealedKeyBoxBase64);
-  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(sealedKeyBox));
-  return bytesToHex(new Uint8Array(digest));
 }

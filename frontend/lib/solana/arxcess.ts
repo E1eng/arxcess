@@ -253,56 +253,6 @@ async function buildCreateProductInstruction(args: {
   };
 }
 
-export async function buildCreateListingTransaction(args: {
-  seller: PublicKey;
-  productIdHex: string;
-  metadataUri: string;
-  ciphertextCid: string;
-  ciphertextHashHex: string;
-  priceLamports: bigint;
-  fileSizeBytes: bigint;
-  vaultHandleHex: string;
-  keyCommitmentHex: string;
-  licenseDurationSeconds: number;
-  maxAccessCount: number;
-  revocable: boolean;
-}) {
-  const programId = requireProgramId();
-  const vaultHandle = assertFixedBytes("Vault handle", hexToBytes(args.vaultHandleHex), FIXED_ID_BYTES);
-  const keyCommitment = assertFixedBytes("Key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
-  const { productState, instruction: createProductInstruction } = await buildCreateProductInstruction(args);
-  const depositProductKeyData = concatBytes(await getInstructionDiscriminator("deposit_product_key"), vaultHandle, keyCommitment);
-  const activateProductData = await getInstructionDiscriminator("activate_product");
-  const transaction = new Transaction().add(
-    createProductInstruction,
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.seller, isSigner: true, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: true }
-      ],
-      data: Buffer.from(depositProductKeyData)
-    }),
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.seller, isSigner: true, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: true }
-      ],
-      data: Buffer.from(activateProductData)
-    })
-  );
-
-  transaction.feePayer = args.seller;
-
-  return {
-    transaction,
-    productState,
-    vaultHandleHex: args.vaultHandleHex,
-    keyCommitmentHex: args.keyCommitmentHex
-  };
-}
-
 export async function buildCreateProductTransaction(args: {
   seller: PublicKey;
   productIdHex: string;
@@ -371,6 +321,7 @@ export async function buildStageProductArciumMaterialTransaction(args: {
   productIdHex: string;
   encryptedKeyNonce: bigint;
   encryptedKeyCiphertexts: Uint8Array[];
+  keyCommitmentHex: string;
 }) {
   if (args.encryptedKeyCiphertexts.length !== 2) {
     throw new Error("Encrypted key ciphertexts must contain exactly 2 packed field elements");
@@ -381,10 +332,12 @@ export async function buildStageProductArciumMaterialTransaction(args: {
   const ciphertextBytes = args.encryptedKeyCiphertexts.map((ciphertext, index) => {
     return assertFixedBytes(`Encrypted key ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES);
   });
+  const keyCommitmentBytes = assertFixedBytes("Product key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
   const stageData = concatBytes(
     await getInstructionDiscriminator("stage_product_arcium_material"),
     encodeU128(args.encryptedKeyNonce),
-    ...ciphertextBytes
+    ...ciphertextBytes,
+    keyCommitmentBytes
   );
   const transaction = new Transaction().add(
     new TransactionInstruction({
@@ -589,52 +542,6 @@ export async function buildRevokePurchaseTransaction(args: {
         { pubkey: purchaseState, isSigner: false, isWritable: true }
       ],
       data: Buffer.from(revokePurchaseData)
-    })
-  );
-
-  transaction.feePayer = args.authority;
-
-  return {
-    transaction,
-    productState,
-    purchaseState
-  };
-}
-
-export async function buildFinalizeDeliveryTransaction(args: {
-  authority: PublicKey;
-  listing: LocalProductListing;
-  purchaseIdHex: string;
-  approvalFlag: number;
-  sealedKeyBoxBase64: string;
-  deliveryCommitmentHex: string;
-}) {
-  if (!args.listing.sellerWallet) {
-    throw new Error("Listing is missing seller wallet information");
-  }
-
-  const programId = requireProgramId();
-  const seller = new PublicKey(args.listing.sellerWallet);
-  const productState = deriveProductStateAddress(seller, args.listing.productIdHex);
-  const purchaseState = derivePurchaseStateAddress(productState, args.purchaseIdHex);
-  const sealedKeyBox = base64ToBytes(args.sealedKeyBoxBase64);
-  const deliveryCommitment = assertFixedBytes("Delivery commitment", hexToBytes(args.deliveryCommitmentHex), FIXED_ID_BYTES);
-  const finalizeDeliveryData = concatBytes(
-    await getInstructionDiscriminator("finalize_delivery"),
-    new Uint8Array([args.approvalFlag]),
-    encodeU32(sealedKeyBox.length),
-    sealedKeyBox,
-    deliveryCommitment
-  );
-  const transaction = new Transaction().add(
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.authority, isSigner: true, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: false },
-        { pubkey: purchaseState, isSigner: false, isWritable: true }
-      ],
-      data: Buffer.from(finalizeDeliveryData)
     })
   );
 

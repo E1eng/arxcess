@@ -68,6 +68,7 @@ export interface DecodedProductState {
   metadataUri: string;
   ciphertextCid: string;
   ciphertextHashHex: string;
+  keyCommitmentHex: string;
   licenseDurationSeconds: number;
   maxAccessCount: number;
   revocable: boolean;
@@ -110,7 +111,11 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
   const ciphertextCid = decodeFixedUtf8(data.slice(offset, offset + 100));
   offset += 100;
   const ciphertextHashHex = bytesToHex(data.slice(offset, offset + 32));
-  offset += 32 + 8 + 32 + 32;
+  offset += 32;
+  offset += 8;
+  offset += 32;
+  const keyCommitmentHex = bytesToHex(data.slice(offset, offset + 32));
+  offset += 32;
   const licenseDurationSeconds = readI64(view, offset);
   offset += 8;
   const maxAccessCount = readU32(view, offset);
@@ -131,6 +136,7 @@ export function decodeProductState(data: Uint8Array): DecodedProductState {
     metadataUri,
     ciphertextCid,
     ciphertextHashHex,
+    keyCommitmentHex,
     licenseDurationSeconds,
     maxAccessCount,
     revocable,

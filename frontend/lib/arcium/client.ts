@@ -163,9 +163,29 @@ export async function createArciumDeliveryCommitmentHex(args: {
   return bytesToHex(new Uint8Array(digest));
 }
 
+export async function getArciumMxePublicKey(args: {
+  provider: AnchorProvider;
+  mxeProgramId?: PublicKey;
+}) {
+  const mxeProgramId = args.mxeProgramId ?? getProgramId();
+
+  if (!mxeProgramId) {
+    throw new Error("Missing NEXT_PUBLIC_PROGRAM_ID.");
+  }
+
+  const mxePublicKey = await getMXEPublicKey(args.provider, mxeProgramId);
+
+  if (!mxePublicKey) {
+    throw new Error("Unable to fetch the MXE x25519 public key for Arcium reveal.");
+  }
+
+  return mxePublicKey;
+}
+
 export async function revealArciumDeliveryMaterial(args: {
   keypair: DeliveryKeypair;
   deliveryEncryptionKey: Uint8Array;
+  mxePublicKey: Uint8Array;
   deliveryNonce: bigint;
   deliveryCiphertexts: Uint8Array[];
 }) {
@@ -173,10 +193,16 @@ export async function revealArciumDeliveryMaterial(args: {
     throw new Error(`Arcium delivery payload must contain ${PACKED_DELIVERY_CIPHERTEXT_COUNT} ciphertext field elements`);
   }
 
-  const { secretKey } = decodeDeliveryKeypair(args.keypair);
+  const { publicKey, secretKey } = decodeDeliveryKeypair(args.keypair);
+  const deliveryOwnerPublicKey = assertFixedBytes("Arcium delivery owner public key", args.deliveryEncryptionKey, FIXED_ID_BYTES);
+
+  if (!deliveryOwnerPublicKey.every((byte, index) => byte === publicKey[index])) {
+    throw new Error("Arcium delivery owner public key does not match the buyer delivery keypair.");
+  }
+
   const sharedSecret = x25519.getSharedSecret(
     assertFixedBytes("Buyer delivery secret key", secretKey, FIXED_ID_BYTES),
-    assertFixedBytes("Arcium delivery encryption key", args.deliveryEncryptionKey, FIXED_ID_BYTES)
+    assertFixedBytes("MXE public key", args.mxePublicKey, FIXED_ID_BYTES)
   );
   const cipher = new RescueCipher(sharedSecret);
   const plaintext = cipher.decrypt(

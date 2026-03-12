@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
+import { AnchorProvider } from "@coral-xyz/anchor";
+import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { type ProductMetadata } from "@arxcess/sdk";
+import { PublicKey } from "@solana/web3.js";
+import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, getArciumMxePublicKey, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
+import { base64ToBytes, bytesToHex, hexToBytes } from "@/lib/utils/bytes";
 import { type DeliveryKeypair } from "@/lib/crypto/delivery";
 import { hasConfiguredProgramId } from "@/lib/anchor/client";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
@@ -59,8 +63,25 @@ function randomBigInt(byteLength: number) {
   return value;
 }
 
+async function deriveListingKeyCommitmentHex(args: {
+  contentKey: Uint8Array;
+  ciphertextHashHex: string;
+  productIdHex: string;
+  sellerWallet: string;
+}) {
+  const payload = new Uint8Array([
+    ...hexToBytes(args.productIdHex),
+    ...new PublicKey(args.sellerWallet).toBytes(),
+    ...hexToBytes(args.ciphertextHashHex),
+    ...args.contentKey
+  ]);
+  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
+  return bytesToHex(new Uint8Array(digest));
+}
+
 export function PurchasesList() {
   const { connection } = useConnection();
+  const anchorWallet = useAnchorWallet();
   const { publicKey, sendTransaction } = useWallet();
   const { purchases, refreshPurchases } = usePurchases();
   const { products } = useProducts();
@@ -406,13 +427,54 @@ export function PurchasesList() {
         throw new Error("Arcium delivery commitment mismatch. The on-chain callback payload does not match the stored commitment.");
       }
 
+      if (!anchorWallet) {
+        throw new Error("Connect a compatible wallet before revealing the asset.");
+      }
+
+      const anchorProvider = new AnchorProvider(connection, anchorWallet, AnchorProvider.defaultOptions());
+      const mxePublicKey = await getArciumMxePublicKey({
+        provider: anchorProvider
+      });
+
       stage = "unseal_arcium";
       const deliveryMaterial = await revealArciumDeliveryMaterial({
         keypair: deliveryKeypair,
         deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+        mxePublicKey,
         deliveryNonce: onchain.arciumDeliveryNonce,
         deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
       });
+
+      if (product.sellerWallet && onchainProduct?.keyCommitmentHex) {
+        const derivedKeyCommitmentHex = await deriveListingKeyCommitmentHex({
+          contentKey: deliveryMaterial.contentKey,
+          ciphertextHashHex: onchainProduct.ciphertextHashHex,
+          productIdHex: product.productIdHex,
+          sellerWallet: product.sellerWallet
+        });
+
+        if (derivedKeyCommitmentHex !== onchainProduct.keyCommitmentHex) {
+          throw new Error("Arcium delivery content key does not match the on-chain product key commitment.");
+        }
+      }
+
+      stage = "metadata";
+      const metadataResponse = await fetch(resolveMetadataUrl(product, onchainProduct), {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!metadataResponse.ok) {
+        throw new Error("Failed to fetch listing metadata from storage.");
+      }
+
+      const metadata = (await metadataResponse.json()) as ProductMetadata;
+
+      if (!metadata.ivBase64) {
+        throw new Error("Listing metadata is missing the published IV.");
+      }
+
+      const publishedIv = base64ToBytes(metadata.ivBase64);
 
       stage = "ciphertext";
       const ciphertextUrl = resolveCiphertextUrl(product, onchain, onchainProduct);
@@ -437,7 +499,7 @@ export function PurchasesList() {
       const plaintext = await decryptCiphertext({
         ciphertext,
         contentKey: deliveryMaterial.contentKey,
-        iv: deliveryMaterial.iv
+        iv: publishedIv
       });
       stage = "consume_access";
       const { transaction } = await buildConsumeAccessTransaction({
@@ -486,8 +548,12 @@ export function PurchasesList() {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (message.includes("Failed to unseal delivery material")) {
         setError("Reveal failed because the buyer delivery keypair in this browser does not match the one used during checkout.");
+      } else if (message.includes("owner public key does not match")) {
+        setError("Reveal failed because the on-chain Arcium payload belongs to a different buyer delivery keypair.");
       } else if (message.includes("Arcium delivery commitment mismatch")) {
         setError("Reveal blocked because the on-chain Arcium payload no longer matches the purchase delivery commitment.");
+      } else if (message.includes("product key commitment")) {
+        setError("Reveal blocked because the Arcium-delivered content key no longer matches the product key that was published on-chain.");
       } else if (message.includes("Consume access failed on-chain")) {
         setError(`Reveal decrypted successfully, but consume access failed on-chain. ${message}`);
       } else if (stage === "wallet_approval" || stage === "confirm_consume_access" || stage === "download") {
@@ -495,6 +561,7 @@ export function PurchasesList() {
       } else if (
         message.includes("Failed to decrypt ciphertext") ||
         message.includes("Downloaded ciphertext does not match") ||
+        message.includes("published IV") ||
         message.includes("Unexpected error")
       ) {
         setError("Reveal failed while decrypting the downloaded ciphertext. The on-chain Arcium payload does not match this encrypted file.");

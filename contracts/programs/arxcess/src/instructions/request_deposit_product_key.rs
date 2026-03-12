@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 use arcium_anchor::{
     queue_computation,
     traits::{CallbackCompAccs, QueueCompAccs},
-    HasSize,
     ArgBuilder,
+    HasSize,
     prelude::*,
 };
 use arcium_client::idl::arcium::{
@@ -21,6 +21,13 @@ use crate::{
     ID,
     ID_CONST,
 };
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct DepositKeyRawOutput;
+
+impl HasSize for DepositKeyRawOutput {
+    const SIZE: usize = ProductState::ARCIUM_MXE_MATERIAL_LEN as usize;
+}
 
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
@@ -65,13 +72,6 @@ pub struct RequestDepositProductKey<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct DepositKeyRawOutput;
-
-impl HasSize for DepositKeyRawOutput {
-    const SIZE: usize = ProductState::ARCIUM_MXE_MATERIAL_LEN as usize;
-}
-
 impl<'info> QueueCompAccs<'info> for RequestDepositProductKey<'info> {
     fn comp_def_offset(&self) -> u32 {
         crate::COMP_DEF_OFFSET_DEPOSIT_KEY
@@ -109,6 +109,10 @@ impl<'info> QueueCompAccs<'info> for RequestDepositProductKey<'info> {
 pub fn handler(
     ctx: Context<RequestDepositProductKey>,
     computation_offset: u64,
+    seller_encryption_key: [u8; 32],
+    seller_nonce: u128,
+    seller_ciphertexts: [[u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT],
+    key_commitment: [u8; 32],
 ) -> Result<()> {
     require!(
         ctx.accounts.product_state.status == PRODUCT_STATUS_DRAFT || ctx.accounts.product_state.status == PRODUCT_STATUS_PAUSED,
@@ -119,23 +123,11 @@ pub fn handler(
         ArxcessError::ArciumComputationInFlight
     );
 
-    let has_staged_material = ctx.accounts.product_state.arcium_key_nonce != 0
-        || ctx
-            .accounts
-            .product_state
-            .arcium_key_ciphertexts
-            .iter()
-            .flatten()
-            .any(|byte| *byte != 0);
-    require!(has_staged_material, ArxcessError::MissingArciumCustody);
-
     let args = ArgBuilder::new()
-        .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
-        .account(
-            ctx.accounts.product_state.key(),
-            ProductState::ARCIUM_MXE_CIPHERTEXTS_OFFSET,
-            ProductState::ARCIUM_MXE_CIPHERTEXTS_LEN,
-        )
+        .x25519_pubkey(seller_encryption_key)
+        .plaintext_u128(seller_nonce)
+        .encrypted_u8(seller_ciphertexts[0])
+        .encrypted_u8(seller_ciphertexts[1])
         .build();
 
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
@@ -158,6 +150,7 @@ pub fn handler(
 
     let now = Clock::get()?.unix_timestamp;
     let product_state = &mut ctx.accounts.product_state;
+    product_state.key_commitment = key_commitment;
     product_state.arcium_custody_ready = false;
     product_state.arcium_deposit_computation_offset = computation_offset;
     product_state.arcium_deposit_requested_at = now;
@@ -169,6 +162,21 @@ pub fn handler(
     });
 
     Ok(())
+}
+
+fn parse_mxe_material(bytes: &[u8]) -> Result<(u128, [[u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT])> {
+    require!(bytes.len() == ProductState::ARCIUM_MXE_MATERIAL_LEN as usize, ArxcessError::InvalidDeliveryPayload);
+
+    let nonce = u128::from_le_bytes(bytes[..16].try_into().map_err(|_| error!(ArxcessError::InvalidDeliveryPayload))?);
+    let mut ciphertexts = [[0u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT];
+
+    for (index, ciphertext) in ciphertexts.iter_mut().enumerate() {
+        let start = 16 + (index * 32);
+        let end = start + 32;
+        ciphertext.copy_from_slice(&bytes[start..end]);
+    }
+
+    Ok((nonce, ciphertexts))
 }
 
 #[derive(Accounts)]
@@ -224,25 +232,10 @@ impl CallbackCompAccs for DepositKeyCallback<'_> {
 
         Ok(CallbackInstruction {
             program_id: crate::ID_CONST,
-            discriminator: crate::instruction::DepositKeyV2Callback::DISCRIMINATOR.to_vec(),
+            discriminator: crate::instruction::DepositKeyV3Callback::DISCRIMINATOR.to_vec(),
             accounts,
         })
     }
-}
-
-fn parse_mxe_material(bytes: &[u8]) -> Result<(u128, [[u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT])> {
-    require!(bytes.len() == ProductState::ARCIUM_MXE_MATERIAL_LEN as usize, ArxcessError::InvalidDeliveryPayload);
-
-    let nonce = u128::from_le_bytes(bytes[..16].try_into().map_err(|_| error!(ArxcessError::InvalidDeliveryPayload))?);
-    let mut ciphertexts = [[0u8; 32]; ProductState::ARCIUM_MXE_CIPHERTEXT_COUNT];
-
-    for (index, ciphertext) in ciphertexts.iter_mut().enumerate() {
-        let start = 16 + (index * 32);
-        let end = start + 32;
-        ciphertext.copy_from_slice(&bytes[start..end]);
-    }
-
-    Ok((nonce, ciphertexts))
 }
 
 pub fn callback_handler(

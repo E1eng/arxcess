@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 use arcium_anchor::{
     queue_computation,
     traits::{CallbackCompAccs, QueueCompAccs},
-    HasSize,
     ArgBuilder,
+    HasSize,
     prelude::*,
 };
 use arcium_client::idl::arcium::{
@@ -24,6 +24,13 @@ use crate::{
 };
 
 const PACKED_DELIVERY_CIPHERTEXT_COUNT: usize = 2;
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct EvaluateAndSealRawOutput;
+
+impl HasSize for EvaluateAndSealRawOutput {
+    const SIZE: usize = 1 + 32 + 16 + (32 * PACKED_DELIVERY_CIPHERTEXT_COUNT);
+}
 
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
@@ -68,13 +75,6 @@ pub struct RequestEvaluateAndSeal<'info> {
     pub clock_account: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct EvaluateAndSealRawOutput;
-
-impl HasSize for EvaluateAndSealRawOutput {
-    const SIZE: usize = 1 + 32 + 16 + (32 * PACKED_DELIVERY_CIPHERTEXT_COUNT);
 }
 
 impl<'info> QueueCompAccs<'info> for RequestEvaluateAndSeal<'info> {

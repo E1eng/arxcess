@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId } from "@arxcess/sdk";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { NoticeToast } from "@/components/ui/notice-toast";
+import { WalletAddress } from "@/components/ui/WalletAddress";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { useProducts } from "@/hooks/use-products";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
@@ -11,7 +16,7 @@ import { fetchOnchainProductStates, type DecodedProductState } from "@/lib/solan
 import { buildPurchaseTransaction } from "@/lib/solana/arxcess";
 import { type LocalProductListing, type LocalPurchaseIntent, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
-import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
+import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
 
 export function ProductCatalog() {
   const { connection } = useConnection();
@@ -193,16 +198,17 @@ export function ProductCatalog() {
   }
 
   return (
-    <div className="grid">
-      <section className="card surface page-intro">
-        <div className="page-intro__top">
+    <div className="grid gap-6">
+      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
+        <div className="page-intro__top gap-4">
           <div>
             <span className="eyebrow">Explore</span>
-            <h2 className="section-title">Explore locked digital products</h2>
-            <p className="muted">Choose a product, complete checkout with your wallet, and open it later from Library.</p>
+            <h2 className="section-title text-3xl md:text-4xl">Browse encrypted digital products</h2>
+            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Choose a product, complete checkout with your wallet, and unlock it later from Library once on-chain delivery is ready.</p>
           </div>
-          <div className="page-intro__meta">
-            <span className="badge badge--neutral">Connected wallet: {connectedWallet ? truncateValue(connectedWallet, 12, 10) : "not connected"}</span>
+          <div className="page-intro__meta gap-3">
+            <Badge variant="gray">{visibleProducts.length} products</Badge>
+            {connectedWallet ? <WalletAddress address={connectedWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
           </div>
         </div>
       </section>
@@ -215,10 +221,11 @@ export function ProductCatalog() {
       ) : null}
 
       {visibleProducts.length === 0 ? (
-        <div className="card surface empty-state">
-          <strong>No products are live right now.</strong>
-          <span className="muted">New listings appear here automatically after their on-chain activation is complete.</span>
-        </div>
+        <EmptyState
+          icon="🔒"
+          title="No products found"
+          description="No products are live right now. New listings appear here automatically after their on-chain activation is complete."
+        />
       ) : (
         <div className="catalog-grid">
           {visibleProducts.map((product) => {
@@ -227,50 +234,55 @@ export function ProductCatalog() {
             const canPurchase = canPurchaseProduct(product, onchain);
 
             return (
-              <div key={product.productIdHex} className="card surface product-card">
-                <div className="asset-stage__media product-card__media">
-                  <div className="row">
-                    <span className="badge">{product.category}</span>
-                    <span className="badge badge--neutral">{statusCopy.badge}</span>
+              <Card key={product.productIdHex} className="product-card p-0">
+                <div className="relative overflow-hidden border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(124,58,237,0.18),rgba(12,21,37,0.9),rgba(6,182,212,0.14))] p-5">
+                  <div className="mb-4 flex aspect-video items-center justify-center rounded-[var(--radius)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.68)] text-5xl">
+                    🔒
                   </div>
-                  <strong>{product.title}</strong>
-                  <span className="muted">{product.description}</span>
-                  <span className="asset-stage__lock">{statusCopy.subtitle}</span>
-                </div>
-                <div className="metric-grid">
-                  <div className="kpi compact-kpi">
-                    <span className="muted">Price</span>
-                    <strong>{product.priceSol} SOL</strong>
+                  <div className="absolute right-4 top-4">
+                    <Badge variant="violet">Encrypted</Badge>
                   </div>
-                  <div className="kpi compact-kpi">
-                    <span className="muted">Asset size</span>
-                    <strong>{formatBytes(product.fileSizeBytes)}</strong>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="cyan">{product.category}</Badge>
+                    <Badge variant="gray">{statusCopy.badge}</Badge>
+                    {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
                   </div>
                 </div>
-                <div className="detail-list">
-                  <div className="detail-row">
-                    <span className="muted">Publisher</span>
-                    <strong>{product.sellerWallet ? truncateValue(product.sellerWallet) : "not connected"}</strong>
+                <div className="grid gap-5 p-5">
+                  <div className="grid gap-2">
+                    <h3 className="font-head text-2xl font-bold text-text">{product.title}</h3>
+                    <p className="line-clamp-2 text-sm leading-7 text-text2">{product.description}</p>
+                    <span className="text-xs leading-6 text-text2">{statusCopy.subtitle}</span>
                   </div>
-                  <div className="detail-row">
-                    <span className="muted">Access window</span>
-                    <strong>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</strong>
+                  <div className="grid gap-3 text-sm text-text2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Price</span>
+                      <strong className="font-mono text-base text-violet2">◎ {Number(product.priceSol).toFixed(4)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Asset size</span>
+                      <strong>{formatBytes(product.fileSizeBytes)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Access window</span>
+                      <strong>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Reveal limit</span>
+                      <strong>{product.policy.maxAccessCount}</strong>
+                    </div>
                   </div>
-                  <div className="detail-row">
-                    <span className="muted">Reveal limit</span>
-                    <strong>{product.policy.maxAccessCount}</strong>
-                  </div>
-                  <div className="detail-row">
-                    <span className="muted">Revocable</span>
-                    <strong>{product.policy.revocable ? "Yes" : "No"}</strong>
+                  <div className="flex items-center justify-between gap-3 border-t border-[color:var(--border)] pt-4">
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.1em] text-text3">Publisher</div>
+                      {product.sellerWallet ? <WalletAddress address={product.sellerWallet} shortened /> : <span className="text-sm text-text2">Unknown</span>}
+                    </div>
+                    <Button type="button" variant="cyan" size="sm" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex || !canPurchase} loading={busyProductId === product.productIdHex}>
+                      {busyProductId === product.productIdHex ? "Processing..." : "Buy →"}
+                    </Button>
                   </div>
                 </div>
-                <div className="row">
-                  <button className="button" type="button" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex || !canPurchase}>
-                    {busyProductId === product.productIdHex ? "Processing..." : `Buy for ${product.priceSol} SOL`}
-                  </button>
-                </div>
-              </div>
+              </Card>
             );
           })}
         </div>

@@ -5,8 +5,14 @@ import { AnchorProvider } from "@coral-xyz/anchor";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { type ProductMetadata } from "@arxcess/sdk";
 import { PublicKey } from "@solana/web3.js";
-import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, getArciumMxePublicKey, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial } from "@/lib/arcium/client";
+import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, getArciumMxePublicKey, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial, revealArciumDeliveryMaterialWithNonce } from "@/lib/arcium/client";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { NoticeToast } from "@/components/ui/notice-toast";
+import { WalletAddress } from "@/components/ui/WalletAddress";
+import { StatusIndicator } from "@/components/StatusIndicator";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
 import { base64ToBytes, bytesToHex, hexToBytes } from "@/lib/utils/bytes";
 import { type DeliveryKeypair } from "@/lib/crypto/delivery";
@@ -77,6 +83,54 @@ async function deriveListingKeyCommitmentHex(args: {
   ]);
   const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(payload));
   return bytesToHex(new Uint8Array(digest));
+}
+
+async function resolveVerifiedDeliveryMaterial(args: {
+  deliveryKeypair: DeliveryKeypair;
+  deliveryEncryptionKey: Uint8Array;
+  mxePublicKey: Uint8Array;
+  deliveryNonce: bigint;
+  deliveryCiphertexts: Uint8Array[];
+  expectedKeyCommitmentHex: string;
+  ciphertextHashHex: string;
+  productIdHex: string;
+  sellerWallet: string;
+}) {
+  const attempts = [
+    { label: "stored", nonce: args.deliveryNonce },
+    { label: "plus_1", nonce: args.deliveryNonce + 1n },
+    ...(args.deliveryNonce > 0n ? [{ label: "minus_1", nonce: args.deliveryNonce - 1n }] : [])
+  ];
+
+  for (const attempt of attempts) {
+    const material = attempt.label === "stored"
+      ? await revealArciumDeliveryMaterial({
+          keypair: args.deliveryKeypair,
+          deliveryEncryptionKey: args.deliveryEncryptionKey,
+          mxePublicKey: args.mxePublicKey,
+          deliveryNonce: attempt.nonce,
+          deliveryCiphertexts: args.deliveryCiphertexts
+        })
+      : await revealArciumDeliveryMaterialWithNonce({
+          keypair: args.deliveryKeypair,
+          mxePublicKey: args.mxePublicKey,
+          deliveryNonce: attempt.nonce,
+          deliveryCiphertexts: args.deliveryCiphertexts
+        });
+
+    const derivedKeyCommitmentHex = await deriveListingKeyCommitmentHex({
+      contentKey: material.contentKey,
+      ciphertextHashHex: args.ciphertextHashHex,
+      productIdHex: args.productIdHex,
+      sellerWallet: args.sellerWallet
+    });
+
+    if (derivedKeyCommitmentHex === args.expectedKeyCommitmentHex) {
+      return material;
+    }
+  }
+
+  throw new Error("Arcium delivery content key does not match the on-chain product key commitment.");
 }
 
 export function PurchasesList() {
@@ -437,26 +491,25 @@ export function PurchasesList() {
       });
 
       stage = "unseal_arcium";
-      const deliveryMaterial = await revealArciumDeliveryMaterial({
-        keypair: deliveryKeypair,
-        deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
-        mxePublicKey,
-        deliveryNonce: onchain.arciumDeliveryNonce,
-        deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
-      });
-
-      if (product.sellerWallet && onchainProduct?.keyCommitmentHex) {
-        const derivedKeyCommitmentHex = await deriveListingKeyCommitmentHex({
-          contentKey: deliveryMaterial.contentKey,
-          ciphertextHashHex: onchainProduct.ciphertextHashHex,
-          productIdHex: product.productIdHex,
-          sellerWallet: product.sellerWallet
-        });
-
-        if (derivedKeyCommitmentHex !== onchainProduct.keyCommitmentHex) {
-          throw new Error("Arcium delivery content key does not match the on-chain product key commitment.");
-        }
-      }
+      const deliveryMaterial = product.sellerWallet && onchainProduct?.keyCommitmentHex
+        ? await resolveVerifiedDeliveryMaterial({
+            deliveryKeypair,
+            deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+            mxePublicKey,
+            deliveryNonce: onchain.arciumDeliveryNonce,
+            deliveryCiphertexts: onchain.arciumDeliveryCiphertexts,
+            expectedKeyCommitmentHex: onchainProduct.keyCommitmentHex,
+            ciphertextHashHex: onchainProduct.ciphertextHashHex,
+            productIdHex: product.productIdHex,
+            sellerWallet: product.sellerWallet
+          })
+        : await revealArciumDeliveryMaterial({
+            keypair: deliveryKeypair,
+            deliveryEncryptionKey: onchain.arciumDeliveryEncryptionKey,
+            mxePublicKey,
+            deliveryNonce: onchain.arciumDeliveryNonce,
+            deliveryCiphertexts: onchain.arciumDeliveryCiphertexts
+          });
 
       stage = "metadata";
       const metadataResponse = await fetch(resolveMetadataUrl(product, onchainProduct), {
@@ -574,17 +627,17 @@ export function PurchasesList() {
   }
 
   return (
-    <div className="grid">
-      <section className="card surface page-intro">
-        <div className="page-intro__top">
+    <div className="grid gap-6">
+      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
+        <div className="page-intro__top gap-4">
           <div>
             <span className="eyebrow">Library</span>
-            <h2 className="section-title">Open delivered purchases</h2>
-            <p className="muted">When delivery is ready, reveal and download your item from here.</p>
+            <h2 className="section-title text-3xl md:text-4xl">Purchased items & delivery hub</h2>
+            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Reveal delivered purchases, manage creator-side delivery, and track on-chain entitlement status from one place.</p>
           </div>
-          <div className="page-intro__meta">
-            <span className="badge badge--neutral">Connected wallet: {connectedWallet ? truncateValue(connectedWallet, 12, 10) : "not connected"}</span>
-            <span className="badge badge--neutral">Custody: {hasPurchases ? "Arcium" : "No purchases yet"}</span>
+          <div className="page-intro__meta gap-3">
+            {connectedWallet ? <WalletAddress address={connectedWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
+            <Badge variant="cyan">Custody: {hasPurchases ? "Arcium" : "No purchases yet"}</Badge>
           </div>
         </div>
       </section>
@@ -603,15 +656,15 @@ export function PurchasesList() {
         </div>
       ) : null}
 
-      <div className="card surface">
+      <Card className="p-6 md:p-7">
         <div>
           <div>
-            <h2 className="section-title">Library</h2>
-            <p className="muted">Everything you bought appears here.</p>
+            <h2 className="section-title text-2xl md:text-3xl">Library</h2>
+            <p className="muted mt-2 text-sm leading-7">Everything you bought appears here, including creator-side delivery actions when you are the publisher.</p>
           </div>
         </div>
         {purchaseCards.length === 0 ? (
-          <span className="muted">No purchases yet. Complete checkout from Explore to see items here.</span>
+          <EmptyState icon="📦" title="No purchases yet" description="Complete checkout from Explore to see items here." />
         ) : (
           <div className="catalog-grid">
             {purchaseCards.map(({ purchase, product }) => {
@@ -619,17 +672,31 @@ export function PurchasesList() {
               const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
               const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
               const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
+              const statusVariant: "pending_seal" | "delivered" | "revoked" = effectiveStatus === "revoked"
+                ? "revoked"
+                : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
+                  ? "delivered"
+                  : "pending_seal";
 
               return (
-                <div key={purchase.purchaseIdHex} className="card surface product-card">
-                  <div className="asset-stage__media product-card__media">
-                    <div className="row">
-                      <span className="badge">{product?.category ?? "purchase"}</span>
-                      <span className="badge badge--neutral">{effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" ? "Delivered" : effectiveStatus === "delivered_arcium" ? "Delivered on-chain" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting delivery"}</span>
+                <Card key={purchase.purchaseIdHex} className="product-card p-0">
+                  <div className="border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(124,58,237,0.16),rgba(12,21,37,0.92),rgba(6,182,212,0.1))] p-5">
+                    <div className="mb-4 flex aspect-video items-center justify-center rounded-[var(--radius)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.68)] text-5xl">
+                      📦
                     </div>
-                    <strong>{product?.title ?? "Unknown listing"}</strong>
-                    <span className="muted">{product?.description ?? "The matching product data is not available in local storage."}</span>
-                    <span className="asset-stage__lock">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="cyan">{product?.category ?? "purchase"}</Badge>
+                      <Badge variant="gray">{effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" ? "Delivered" : effectiveStatus === "delivered_arcium" ? "Delivered on-chain" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting delivery"}</Badge>
+                    </div>
+                  </div>
+                  <div className="grid gap-5 p-5">
+                    <div className="grid gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="font-head text-2xl font-bold text-text">{product?.title ?? "Unknown listing"}</h3>
+                        <StatusIndicator status={statusVariant} />
+                      </div>
+                      <span className="muted text-sm leading-7">{product?.description ?? "The matching product data is not available in local storage."}</span>
+                      <span className="asset-stage__lock">
                       {effectiveStatus === "prepared"
                         ? "Payment has not been executed yet."
                         : effectiveStatus === "revoked"
@@ -641,16 +708,16 @@ export function PurchasesList() {
                           : effectiveStatus === "delivered_arcium"
                             ? "Delivery callback completed on-chain. Reveal now decrypts the Arcium payload directly from purchase state."
                             : "Waiting for publisher delivery."}
-                    </span>
-                  </div>
+                      </span>
+                    </div>
                   <div className="detail-list">
                     <div className="detail-row">
                       <span className="muted">Amount</span>
-                      <strong>{purchase.amountSol} SOL</strong>
+                      <strong className="font-mono text-violet2">◎ {Number(purchase.amountSol).toFixed(4)}</strong>
                     </div>
                     <div className="detail-row">
                       <span className="muted">Publisher</span>
-                      <strong>{product?.sellerWallet ? truncateValue(product.sellerWallet) : "Unknown"}</strong>
+                      <div>{product?.sellerWallet ? <WalletAddress address={product.sellerWallet} /> : <strong>Unknown</strong>}</div>
                     </div>
                     <div className="detail-row">
                       <span className="muted">Access used</span>
@@ -670,33 +737,34 @@ export function PurchasesList() {
                     </div>
                   </div>
                   {isPublishingWallet || isPurchaseWallet ? (
-                    <div className="row">
+                    <div className="row pt-2">
                       {isPublishingWallet && effectiveStatus === "pending_seal" ? (
-                        <button className="button secondary" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                        <Button variant="secondary" size="sm" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Finalizing..." : "Finalize delivery"}
-                        </button>
+                        </Button>
                       ) : null}
                       {isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium") ? (
-                        <button className="button" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                        <Button variant="cyan" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
-                        </button>
+                        </Button>
                       ) : null}
                       {isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable ? (
-                        <button className="button secondary" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex}>
+                        <Button variant="danger" size="sm" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Revoking..." : "Revoke access"}
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                   ) : null}
                   {!isPublishingWallet && !isPurchaseWallet ? (
                     <span className="muted">Open this item with the publishing wallet to manage delivery, or with the purchase wallet to reveal it.</span>
                   ) : null}
-                </div>
+                  </div>
+                </Card>
               );
             })}
           </div>
         )}
-      </div>
+      </Card>
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
     </div>
   );

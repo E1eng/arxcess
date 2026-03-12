@@ -25,13 +25,26 @@ const RAW_ACCOUNT_OVERHEAD = 9;
 const COMP_DEFINITION_CONFIGS = [
   {
     instructionName: "init_deposit_key_comp_def",
-    circuitName: "deposit_key_v2"
+    circuitName: "deposit_key_v3"
   },
   {
     instructionName: "init_evaluate_and_seal_comp_def",
     circuitName: "evaluate_and_seal_v3"
   }
 ];
+
+function getTargetCircuitNames() {
+  const fromArgv = process.argv.slice(2).map((value) => value.trim()).filter(Boolean);
+  if (fromArgv.length > 0) {
+    return new Set(fromArgv);
+  }
+
+  const fromEnv = (process.env.ARCIUM_COMP_DEF_CIRCUITS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return fromEnv.length > 0 ? new Set(fromEnv) : null;
+}
 
 function getUploadChunkSize() {
   const raw = Number(process.env.ARCIUM_UPLOAD_CHUNK_SIZE ?? "8");
@@ -205,6 +218,7 @@ async function uploadCircuitResumable(provider, arciumProgram, circuitName, mxeP
     const rawCircuitPart = rawCircuit.subarray(rawCircuitIndex * maxRawCircuitPartSize, (rawCircuitIndex + 1) * maxRawCircuitPartSize);
     const rawCircuitPda = getRawCircuitAccAddress(compDefAccount, rawCircuitIndex);
     let existingAcc = await provider.connection.getAccountInfo(rawCircuitPda, "confirmed");
+    process.stdout.write(`[${circuitName}] raw circuit part ${rawCircuitIndex + 1}/${numAccs} (${rawCircuitPart.length} bytes)\n`);
 
     if (!existingAcc) {
       const initSig = await arciumProgram.methods
@@ -235,6 +249,9 @@ async function uploadCircuitResumable(provider, arciumProgram, circuitName, mxeP
     const remainingTxCount = Math.ceil(rawCircuitPart.length / MAX_UPLOAD_PER_TX_BYTES);
     for (let i = 0; i < remainingTxCount; i += chunkSize) {
       const currentChunkSize = Math.min(chunkSize, remainingTxCount - i);
+      process.stdout.write(
+        `[${circuitName}] uploading chunks ${i + 1}-${i + currentChunkSize} / ${remainingTxCount} for part ${rawCircuitIndex + 1}/${numAccs}\n`
+      );
       for (let j = 0; j < currentChunkSize; j += 1) {
         const offset = MAX_UPLOAD_PER_TX_BYTES * (i + j);
         const tx = await buildUploadCircuitTx(
@@ -252,6 +269,7 @@ async function uploadCircuitResumable(provider, arciumProgram, circuitName, mxeP
     }
   }
 
+  process.stdout.write(`[${circuitName}] finalizing computation definition\n`);
   signatures.push(await signAndSend(provider, await buildFinalizeCompDefTx(provider, compDefOffset, mxeProgramId)));
   return signatures;
 }
@@ -317,9 +335,18 @@ async function main() {
   const mxeAccount = getMXEAccAddress(program.programId);
   const mxeInfo = await arciumProgram.account.mxeAccount.fetch(mxeAccount);
   const addressLookupTable = getLookupTableAddress(program.programId, mxeInfo.lutOffsetSlot);
+  const targetCircuits = getTargetCircuitNames();
+  const configs = targetCircuits
+    ? COMP_DEFINITION_CONFIGS.filter((config) => targetCircuits.has(config.circuitName))
+    : COMP_DEFINITION_CONFIGS;
+
+  if (configs.length === 0) {
+    throw new Error("No matching computation definitions selected.");
+  }
 
   const results = [];
-  for (const config of COMP_DEFINITION_CONFIGS) {
+  for (const config of configs) {
+    process.stdout.write(`[init] processing ${config.circuitName}\n`);
     results.push(await initCompDef({
       provider,
       program,

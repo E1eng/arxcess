@@ -28,6 +28,7 @@ export interface CustodyPreparationResult {
   custodyMode: ListingCustodyMode;
   keyCommitmentHex?: string;
   arciumPublishMaterial?: {
+    sellerEncryptionPublicKey: Uint8Array;
     encryptedKeyCiphertexts: Uint8Array[];
     encryptedKeyNonce: bigint;
   };
@@ -131,6 +132,32 @@ function unpackDeliveryMaterial(chunks: bigint[]) {
   };
 }
 
+function decryptArciumDeliveryMaterial(args: {
+  keypair: DeliveryKeypair;
+  sharedPublicKey: Uint8Array;
+  deliveryNonce: bigint;
+  deliveryCiphertexts: Uint8Array[];
+}) {
+  if (args.deliveryCiphertexts.length !== PACKED_DELIVERY_CIPHERTEXT_COUNT) {
+    throw new Error(`Arcium delivery payload must contain ${PACKED_DELIVERY_CIPHERTEXT_COUNT} ciphertext field elements`);
+  }
+
+  const { secretKey } = decodeDeliveryKeypair(args.keypair);
+  const sharedSecret = x25519.getSharedSecret(
+    assertFixedBytes("Buyer delivery secret key", secretKey, FIXED_ID_BYTES),
+    assertFixedBytes("Arcium shared public key", args.sharedPublicKey, FIXED_ID_BYTES)
+  );
+  const cipher = new RescueCipher(sharedSecret);
+  const plaintext = cipher.decrypt(
+    args.deliveryCiphertexts.map((ciphertext, index) => {
+      return Array.from(assertFixedBytes(`Arcium delivery ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES));
+    }),
+    bigIntToBytesLE(args.deliveryNonce, 16)
+  );
+
+  return unpackDeliveryMaterial(plaintext);
+}
+
 async function deriveListingKeyCommitmentHex(args: {
   contentKeyBase64: string;
   ciphertextHashHex: string;
@@ -193,26 +220,33 @@ export async function revealArciumDeliveryMaterial(args: {
     throw new Error(`Arcium delivery payload must contain ${PACKED_DELIVERY_CIPHERTEXT_COUNT} ciphertext field elements`);
   }
 
-  const { publicKey, secretKey } = decodeDeliveryKeypair(args.keypair);
+  const { publicKey } = decodeDeliveryKeypair(args.keypair);
   const deliveryOwnerPublicKey = assertFixedBytes("Arcium delivery owner public key", args.deliveryEncryptionKey, FIXED_ID_BYTES);
 
   if (!deliveryOwnerPublicKey.every((byte, index) => byte === publicKey[index])) {
     throw new Error("Arcium delivery owner public key does not match the buyer delivery keypair.");
   }
 
-  const sharedSecret = x25519.getSharedSecret(
-    assertFixedBytes("Buyer delivery secret key", secretKey, FIXED_ID_BYTES),
-    assertFixedBytes("MXE public key", args.mxePublicKey, FIXED_ID_BYTES)
-  );
-  const cipher = new RescueCipher(sharedSecret);
-  const plaintext = cipher.decrypt(
-    args.deliveryCiphertexts.map((ciphertext, index) => {
-      return Array.from(assertFixedBytes(`Arcium delivery ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES));
-    }),
-    bigIntToBytesLE(args.deliveryNonce, 16)
-  );
+  return decryptArciumDeliveryMaterial({
+    keypair: args.keypair,
+    sharedPublicKey: args.mxePublicKey,
+    deliveryNonce: args.deliveryNonce,
+    deliveryCiphertexts: args.deliveryCiphertexts
+  });
+}
 
-  return unpackDeliveryMaterial(plaintext);
+export function revealArciumDeliveryMaterialWithNonce(args: {
+  keypair: DeliveryKeypair;
+  mxePublicKey: Uint8Array;
+  deliveryNonce: bigint;
+  deliveryCiphertexts: Uint8Array[];
+}) {
+  return decryptArciumDeliveryMaterial({
+    keypair: args.keypair,
+    sharedPublicKey: args.mxePublicKey,
+    deliveryNonce: args.deliveryNonce,
+    deliveryCiphertexts: args.deliveryCiphertexts
+  });
 }
 
 export async function prepareListingCustody(
@@ -251,6 +285,7 @@ export async function prepareListingCustody(
   const plaintext = packDeliveryMaterial(contentKeyBytes, ivBytes);
   const nonce = randomBytes(16);
   const privateKey = x25519.utils.randomSecretKey();
+  const publicKey = x25519.getPublicKey(privateKey);
   const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
   const cipher = new RescueCipher(sharedSecret);
   const encryptedKeyCiphertexts = cipher.encrypt(plaintext, nonce).map((ciphertext) => Uint8Array.from(ciphertext));
@@ -259,6 +294,7 @@ export async function prepareListingCustody(
     custodyMode,
     keyCommitmentHex,
     arciumPublishMaterial: {
+      sellerEncryptionPublicKey: Uint8Array.from(publicKey),
       encryptedKeyCiphertexts,
       encryptedKeyNonce: bytesToBigIntLE(nonce)
     }

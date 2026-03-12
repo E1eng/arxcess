@@ -1,52 +1,31 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import Link from "next/link";
 import { PropsWithChildren } from "react";
-import { usePathname } from "next/navigation";
+import { Navbar } from "@/components/Navbar";
 
-const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((module) => module.WalletMultiButton),
-  { ssr: false }
-);
+interface AppShellProps extends PropsWithChildren {
+  footer?: boolean;
+}
 
-const links = [
-  { href: "/products", label: "Explore" },
-  { href: "/seller", label: "Launch" },
-  { href: "/purchases", label: "Library" }
-] as const;
-
-export function AppShell({ children }: PropsWithChildren) {
-  const pathname = usePathname();
-
+export function AppShell({ children, footer = true }: AppShellProps) {
   return (
-    <main className="app-main">
-      <div className="shell">
-        <header className="nav-shell">
-          <div className="nav-shell__row">
-            <div className="nav-brand">
-              <Link className="brand-link" href="/">
-                <span className="brand-mark">AX</span>
-                <strong>Arxcess</strong>
-              </Link>
-            </div>
-            <nav className="nav-links" aria-label="Primary">
-              {links.map((link) => (
-                <Link key={link.href} className={pathname === link.href ? "nav-link active" : "nav-link"} href={link.href}>
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-            <div className="nav-actions">
-              <WalletMultiButton />
-            </div>
+    <div className="relative min-h-screen">
+      <Navbar />
+      <main className="mx-auto flex w-[min(1280px,calc(100%-24px))] flex-col gap-8 py-8 md:py-10">{children}</main>
+      {footer ? (
+        <footer className="mx-auto flex w-[min(1280px,calc(100%-24px))] flex-col gap-4 border-t border-[color:var(--border)] py-8 text-sm text-text2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-head text-lg font-bold text-text">Arxcess</div>
+            <p>Encrypted marketplace on Solana.</p>
           </div>
-        </header>
-        <div className="content-stack">{children}</div>
-        <footer className="footer muted">
-          <span>Encrypted files, wallet payments, and secure delivery.</span>
+          <div className="flex flex-wrap gap-4">
+            <span>Explore</span>
+            <span>Launch</span>
+            <span>Library</span>
+            <span>© 2025 Arxcess · Built on Solana Devnet</span>
+          </div>
         </footer>
-      </div>
-    </main>
+      ) : null}
+    </div>
   );
 }

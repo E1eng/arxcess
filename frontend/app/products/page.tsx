@@ -1,10 +1,6 @@
-import { AppShell } from "@/components/marketplace/app-shell";
-import { ProductCatalog } from "@/components/purchase/product-catalog";
+export { metadata } from "@/app/explore/page";
+import ExplorePage from "@/app/explore/page";
 
 export default function ProductsPage() {
-  return (
-    <AppShell>
-      <ProductCatalog />
-    </AppShell>
-  );
+  return <ExplorePage />;
 }

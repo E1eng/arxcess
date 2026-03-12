@@ -6,18 +6,24 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId, type ProductMetadata } from "@arxcess/sdk";
 import { getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, prepareListingCustody } from "@/lib/arcium/client";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Input, Select, Textarea } from "@/components/ui/Input";
 import { NoticeToast } from "@/components/ui/notice-toast";
+import { WalletAddress } from "@/components/ui/WalletAddress";
+import { StepIndicator } from "@/components/StepIndicator";
 import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
 import { fetchOnchainProductStates } from "@/lib/solana/account-state";
-import { buildActivateProductTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
+import { buildActivateProductTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
 import { type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
-import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
+import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
 
 const initialForm = {
   title: "",
@@ -394,26 +400,23 @@ export function SellerWorkbench() {
         maxAccessCount,
         revocable: form.revocable
       });
-      const stageTx = await buildStageProductArciumMaterialTransaction({
+      const requestTx = await buildRequestDepositProductKeyTransaction({
         seller: publicKey,
         productIdHex,
+        computationOffset,
+        sellerEncryptionPublicKey: custody.arciumPublishMaterial.sellerEncryptionPublicKey,
         encryptedKeyNonce: custody.arciumPublishMaterial.encryptedKeyNonce,
         encryptedKeyCiphertexts: custody.arciumPublishMaterial.encryptedKeyCiphertexts,
         keyCommitmentHex: custody.keyCommitmentHex
       });
-      const requestTx = await buildRequestDepositProductKeyTransaction({
-        seller: publicKey,
-        productIdHex,
-        computationOffset
-      });
 
-      const publishSetupTransaction = createTx.transaction.add(...stageTx.transaction.instructions);
+      const publishSetupTransaction = createTx.transaction;
       const setupBlockhash = await connection.getLatestBlockhash();
 
       publishSetupTransaction.recentBlockhash = setupBlockhash.blockhash;
       publishSetupTransaction.feePayer = publicKey;
 
-      setStatusMessage("Waiting for wallet approval to create the listing and stage Arcium material...");
+      setStatusMessage("Waiting for wallet approval to create the listing...");
       const publishSetupSignature = await sendTransaction(publishSetupTransaction, connection);
 
       setStatusMessage("Listing created. Waiting for on-chain confirmation before queueing Arcium custody...");
@@ -498,20 +501,22 @@ export function SellerWorkbench() {
   }
 
   return (
-    <div className="grid">
-      <section className="card surface page-intro">
-        <div className="page-intro__top">
+    <div className="grid gap-6">
+      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
+        <div className="page-intro__top gap-4">
           <div>
             <span className="eyebrow">Launch</span>
-            <h2 className="section-title">Launch a locked product</h2>
-            <p className="muted">Fill in the listing, upload the file, and publish.</p>
+            <h2 className="section-title text-3xl md:text-4xl">Launch encrypted products</h2>
+            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Create listing details, encrypt in-browser, set terms, and publish to Solana with Arcium custody.</p>
           </div>
-          <div className="page-intro__meta">
-            <span className="badge badge--neutral">Connected wallet: {sellerWallet ? truncateValue(sellerWallet, 12, 10) : "not connected"}</span>
-            <span className="badge badge--neutral">Custody: Arcium</span>
+          <div className="page-intro__meta gap-3">
+            {sellerWallet ? <WalletAddress address={sellerWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
+            <Badge variant="cyan">Custody: Arcium</Badge>
           </div>
         </div>
       </section>
+
+      <StepIndicator steps={["Product Info", "Upload & Encrypt", "Set Terms", "Publish"]} currentStep={result ? 4 : busy ? 4 : file ? 2 : 1} />
 
       {isArciumPublishBlocked ? (
         <div className="callout callout--info">
@@ -521,45 +526,27 @@ export function SellerWorkbench() {
       ) : null}
 
       <div className="grid grid-2 marketplace-split">
-        <div className="card surface">
+        <Card className="p-6 md:p-7">
           <div>
-            <h2 className="section-title">Listing details</h2>
-            <p className="muted">Add the product info and the file people unlock after purchase.</p>
+            <h2 className="section-title text-2xl md:text-3xl">Listing details</h2>
+            <p className="muted mt-2 text-sm leading-7">Add the product info and the file buyers unlock after purchase.</p>
           </div>
-          <form className="grid" onSubmit={handleSubmit}>
-            <label>
-              Title
-              <input name="title" required value={form.title} onChange={handleInputChange} placeholder="Premium concept art pack" />
-            </label>
-            <label>
-              Description
-              <textarea name="description" required value={form.description} onChange={handleInputChange} placeholder="Explain what unlocks after purchase." />
-            </label>
+          <form className="grid gap-5" onSubmit={handleSubmit}>
+            <Input label="Product Name" name="title" required value={form.title} onChange={handleInputChange} placeholder="Premium concept art pack" />
+            <Textarea label="Description" name="description" required value={form.description} onChange={handleInputChange} placeholder="Explain what unlocks after purchase." />
             <div className="grid grid-2">
-              <label>
-                Category
-                <select name="category" value={form.category} onChange={handleInputChange}>
+              <Select label="Category" name="category" value={form.category} onChange={handleInputChange}>
                   <option value="ebook">ebook</option>
                   <option value="code">code</option>
                   <option value="image">image</option>
                   <option value="template">template</option>
                   <option value="dataset">dataset</option>
-                </select>
-              </label>
-              <label>
-                Price (SOL)
-                <input name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" />
-              </label>
+              </Select>
+              <Input label="Price" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" suffix="SOL" />
             </div>
             <div className="grid grid-2">
-              <label>
-                License duration (days)
-                <input name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" />
-              </label>
-              <label>
-                Max reveal count
-                <input name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" />
-              </label>
+              <Input label="Access Window (days)" name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" hint="Buyer access expires after N days." />
+              <Input label="Reveal Limit" name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" hint="Max times buyer can download." />
             </div>
             <label className="checkbox-field">
               <input type="checkbox" name="revocable" checked={form.revocable} onChange={handleInputChange} />
@@ -568,8 +555,13 @@ export function SellerWorkbench() {
                 <span className="muted">Allow this purchase to be revoked later.</span>
               </span>
             </label>
-            <label>
-              Asset file
+            <label className="grid gap-3 text-sm text-text">
+              <span className="font-medium">Upload & Encrypt</span>
+              <div className="rounded-[var(--radius-lg)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.45)] p-5 text-center">
+                <div className="text-sm font-medium text-text">Drag & drop your file here</div>
+                <div className="mt-1 text-xs text-text2">Supported: PDF, ZIP, PNG, MP4, etc</div>
+                <div className="mt-1 text-xs text-text3">Max size depends on your browser and storage upload limits</div>
+              </div>
               <input
                 type="file"
                 required
@@ -578,10 +570,11 @@ export function SellerWorkbench() {
                 }}
               />
             </label>
+            {file ? <Badge variant="cyan">Will be encrypted in browser before upload</Badge> : null}
             <div className="row">
-              <button className="button" type="submit" disabled={busy || !file || isArciumPublishBlocked}>
-                {busy ? "Publishing..." : "Publish listing"}
-              </button>
+              <Button type="submit" disabled={busy || !file || isArciumPublishBlocked} loading={busy}>
+                {busy ? "Publishing..." : "Sign & Publish on Solana"}
+              </Button>
             </div>
           </form>
           {statusMessage ? (
@@ -590,13 +583,13 @@ export function SellerWorkbench() {
               <span className="muted">{statusMessage}</span>
             </div>
           ) : null}
-        </div>
+        </Card>
 
-        <div className="card surface accent-card">
+        <Card className="accent-card p-6 md:p-7">
           <div>
-            <span className="badge">Preview</span>
-            <h3 className="section-title">Listing preview</h3>
-            <p className="muted">Check the title, file, and state before publishing.</p>
+            <Badge variant="violet">Preview</Badge>
+            <h3 className="section-title mt-4 text-2xl md:text-3xl">Listing preview</h3>
+            <p className="muted mt-2 text-sm leading-7">Check the title, file, and state before publishing.</p>
           </div>
           <div className="asset-stage">
             <div className="asset-stage__media">
@@ -615,7 +608,7 @@ export function SellerWorkbench() {
                   </div>
                 )}
               </div>
-              <span className="badge">Encrypted asset</span>
+              <Badge variant="violet">Encrypted asset</Badge>
               <strong>{form.title || "Untitled listing"}</strong>
               <span className="muted">{selectedAssetLabel}</span>
               <span className="asset-stage__lock">Locked until purchase</span>
@@ -643,7 +636,7 @@ export function SellerWorkbench() {
               <strong>{form.revocable ? "Yes" : "No"}</strong>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {result ? (
@@ -658,9 +651,9 @@ export function SellerWorkbench() {
           </div>
           {result.activationRequired ? (
             <div className="row">
-              <button className="button" type="button" onClick={() => void handleActivateResultListing()} disabled={activatingResult}>
+              <Button type="button" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
                 {activatingResult ? "Activating..." : "Activate listing"}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>

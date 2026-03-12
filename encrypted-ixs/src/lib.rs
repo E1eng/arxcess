@@ -13,9 +13,9 @@ mod circuits {
     pub type DeliveryMaterial = Pack<[u8; 44]>;
 
     #[instruction]
-    pub fn deposit_key_v2(input_ctxt: Enc<Mxe, DeliveryMaterial>) -> Enc<Mxe, DeliveryMaterial> {
+    pub fn deposit_key_v3(input_ctxt: Enc<Shared, DeliveryMaterial>) -> Enc<Mxe, DeliveryMaterial> {
         let input = input_ctxt.to_arcis();
-        input_ctxt.owner.from_arcis(input)
+        Mxe::get().from_arcis(input)
     }
 
     #[instruction]

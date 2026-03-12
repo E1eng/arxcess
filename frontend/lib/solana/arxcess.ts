@@ -12,7 +12,7 @@ const FIXED_ID_BYTES = 32;
 const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ");
 const ARCIUM_FEE_POOL_ACCOUNT = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
 const ARCIUM_CLOCK_ACCOUNT = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
-const DEPOSIT_KEY_COMP_DEF_OFFSET = 192477128;
+const DEPOSIT_KEY_COMP_DEF_OFFSET = 144409244;
 const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 3143075288;
 const OFFSET_BUFFER_SIZE = 4;
 const CLUSTER_ACC_SEED = "Cluster";
@@ -280,11 +280,31 @@ export async function buildRequestDepositProductKeyTransaction(args: {
   seller: PublicKey;
   productIdHex: string;
   computationOffset: bigint;
+  sellerEncryptionPublicKey: Uint8Array;
+  encryptedKeyNonce: bigint;
+  encryptedKeyCiphertexts: Uint8Array[];
+  keyCommitmentHex: string;
 }) {
+  if (args.encryptedKeyCiphertexts.length !== 2) {
+    throw new Error("Encrypted key ciphertexts must contain exactly 2 packed field elements");
+  }
+
   const programId = requireProgramId();
   const productState = deriveProductStateAddress(args.seller, args.productIdHex);
   const arcium = deriveArciumAccounts(args.computationOffset, DEPOSIT_KEY_COMP_DEF_OFFSET);
-  const requestData = concatBytes(await getInstructionDiscriminator("request_deposit_product_key"), encodeU64(args.computationOffset));
+  const sellerEncryptionPublicKey = assertFixedBytes("Seller encryption public key", args.sellerEncryptionPublicKey, FIXED_ID_BYTES);
+  const ciphertextBytes = args.encryptedKeyCiphertexts.map((ciphertext, index) => {
+    return assertFixedBytes(`Encrypted key ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES);
+  });
+  const keyCommitmentBytes = assertFixedBytes("Product key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
+  const requestData = concatBytes(
+    await getInstructionDiscriminator("request_deposit_product_key"),
+    encodeU64(args.computationOffset),
+    sellerEncryptionPublicKey,
+    encodeU128(args.encryptedKeyNonce),
+    ...ciphertextBytes,
+    keyCommitmentBytes
+  );
   const transaction = new Transaction().add(
     new TransactionInstruction({
       programId,
@@ -311,48 +331,6 @@ export async function buildRequestDepositProductKeyTransaction(args: {
 
   return {
     arcium,
-    productState,
-    transaction
-  };
-}
-
-export async function buildStageProductArciumMaterialTransaction(args: {
-  seller: PublicKey;
-  productIdHex: string;
-  encryptedKeyNonce: bigint;
-  encryptedKeyCiphertexts: Uint8Array[];
-  keyCommitmentHex: string;
-}) {
-  if (args.encryptedKeyCiphertexts.length !== 2) {
-    throw new Error("Encrypted key ciphertexts must contain exactly 2 packed field elements");
-  }
-
-  const programId = requireProgramId();
-  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
-  const ciphertextBytes = args.encryptedKeyCiphertexts.map((ciphertext, index) => {
-    return assertFixedBytes(`Encrypted key ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES);
-  });
-  const keyCommitmentBytes = assertFixedBytes("Product key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
-  const stageData = concatBytes(
-    await getInstructionDiscriminator("stage_product_arcium_material"),
-    encodeU128(args.encryptedKeyNonce),
-    ...ciphertextBytes,
-    keyCommitmentBytes
-  );
-  const transaction = new Transaction().add(
-    new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: args.seller, isSigner: true, isWritable: false },
-        { pubkey: productState, isSigner: false, isWritable: true }
-      ],
-      data: Buffer.from(stageData)
-    })
-  );
-
-  transaction.feePayer = args.seller;
-
-  return {
     productState,
     transaction
   };

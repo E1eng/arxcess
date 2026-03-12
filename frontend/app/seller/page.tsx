@@ -1,10 +1,6 @@
-import { AppShell } from "@/components/marketplace/app-shell";
-import { SellerWorkbench } from "@/components/upload/seller-workbench";
+export { metadata } from "@/app/launch/page";
+import LaunchPage from "@/app/launch/page";
 
 export default function SellerPage() {
-  return (
-    <AppShell>
-      <SellerWorkbench />
-    </AppShell>
-  );
+  return <LaunchPage />;
 }

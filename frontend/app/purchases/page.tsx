@@ -1,10 +1,6 @@
-import { AppShell } from "@/components/marketplace/app-shell";
-import { PurchasesList } from "@/components/purchase/purchases-list";
+export { metadata } from "@/app/library/page";
+import LibraryPage from "@/app/library/page";
 
 export default function PurchasesPage() {
-  return (
-    <AppShell>
-      <PurchasesList />
-    </AppShell>
-  );
+  return <LibraryPage />;
 }

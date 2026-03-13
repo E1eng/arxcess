@@ -1,7 +1,7 @@
 import { ButtonHTMLAttributes, forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "cyan" | "danger" | "outline";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "cyan" | "violet" | "danger" | "outline";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -11,19 +11,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: "border border-transparent bg-gradient-to-r from-violet to-cyan text-white shadow-[var(--glow-v)] hover:-translate-y-0.5 hover:shadow-[var(--glow-v)]",
-  secondary: "border border-[color:var(--border2)] bg-[color:var(--surface2)] text-text hover:border-violet hover:bg-[color:rgba(17,30,51,0.92)]",
-  ghost: "border border-[color:var(--border)] bg-transparent text-text hover:bg-[color:rgba(12,21,37,0.65)]",
-  cyan: "border border-transparent bg-gradient-to-r from-cyan to-cyan2 text-slate-950 shadow-[var(--glow-c)] hover:-translate-y-0.5 hover:shadow-[var(--glow-c)]",
-  danger: "border border-[color:rgba(239,68,68,0.35)] bg-[color:rgba(239,68,68,0.12)] text-red hover:bg-[color:rgba(239,68,68,0.18)]",
-  outline: "border border-[color:rgba(124,58,237,0.45)] bg-transparent text-violet2 hover:border-cyan hover:text-cyan2"
+  primary:   "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
+  secondary: "border border-[color:var(--border2)] bg-[color:var(--surface2)] text-[color:var(--text)] hover:border-[#6B50FF] hover:text-white",
+  ghost:     "border border-[color:var(--border)] bg-transparent text-[color:var(--text2)] hover:bg-[color:var(--surface2)] hover:text-[color:var(--text)]",
+  cyan:      "border border-[color:var(--cyan)] bg-[color:var(--cyan)] text-black hover:opacity-90",
+  violet:    "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
+  danger:    "border border-[color:rgba(239,68,68,0.4)] bg-[color:rgba(239,68,68,0.1)] text-[color:var(--red)] hover:bg-[color:rgba(239,68,68,0.18)]",
+  outline:   "border border-[#6B50FF] bg-transparent text-[#9B8FFF] hover:bg-[#6B50FF] hover:text-white"
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: "h-9 px-3.5 text-[13px]",
-  md: "h-11 px-5 text-sm",
-  lg: "h-14 px-7 text-base",
-  icon: "h-[38px] w-[38px] px-0 text-sm"
+  sm:   "h-8 px-3 text-[11px] tracking-[0.06em] uppercase font-bold",
+  md:   "h-9 px-4 text-[12px] tracking-[0.08em] uppercase font-bold",
+  lg:   "h-11 px-6 text-[13px] tracking-[0.1em] uppercase font-bold",
+  icon: "h-8 w-8 px-0 text-sm"
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -34,7 +35,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-[var(--radius)] font-medium transition duration-200 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet2/70 disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B50FF]/50 disabled:cursor-not-allowed disabled:opacity-40",
         variantClasses[variant],
         sizeClasses[size],
         className

@@ -5,10 +5,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { randomHexId } from "@arxcess/sdk";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { NoticeToast } from "@/components/ui/notice-toast";
-import { WalletAddress } from "@/components/ui/WalletAddress";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { useProducts } from "@/hooks/use-products";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
@@ -198,104 +195,95 @@ export function ProductCatalog() {
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
-        <div className="page-intro__top gap-4">
-          <div>
-            <span className="eyebrow">Explore</span>
-            <h2 className="section-title text-3xl md:text-4xl">Browse encrypted digital products</h2>
-            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Choose a product, complete checkout with your wallet, and unlock it later from Library once on-chain delivery is ready.</p>
-          </div>
-          <div className="page-intro__meta gap-3">
-            <Badge variant="gray">{visibleProducts.length} products</Badge>
-            {connectedWallet ? <WalletAddress address={connectedWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
-          </div>
-        </div>
-      </section>
+    <div className="grid gap-px">
 
+      {/* Page header bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Explore</span>
+          <span className="border border-[color:var(--border2)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">{visibleProducts.length} active</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {connectedWallet ? (
+            <span className="flex items-center gap-1.5 font-mono text-[11px] text-[color:var(--text2)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--green)]" />
+              {connectedWallet.slice(0, 4)}…{connectedWallet.slice(-4)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to purchase</span>
+          )}
+        </div>
+      </div>
+
+      {/* Status / checkout feedback */}
       {statusMessage ? (
         <div className="callout callout--info">
-          <strong>Checkout status</strong>
-          <span className="muted">{statusMessage}</span>
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Checkout</strong>
+          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
         </div>
       ) : null}
-
-      {visibleProducts.length === 0 ? (
-        <EmptyState
-          icon="🔒"
-          title="No products found"
-          description="No products are live right now. New listings appear here automatically after their on-chain activation is complete."
-        />
-      ) : (
-        <div className="catalog-grid">
-          {visibleProducts.map((product) => {
-            const onchain = onchainProductStates[product.productIdHex];
-            const statusCopy = resolveProductStatusCopy(product, onchain);
-            const canPurchase = canPurchaseProduct(product, onchain);
-
-            return (
-              <Card key={product.productIdHex} className="product-card p-0">
-                <div className="relative overflow-hidden border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(124,58,237,0.18),rgba(12,21,37,0.9),rgba(6,182,212,0.14))] p-5">
-                  <div className="mb-4 flex aspect-video items-center justify-center rounded-[var(--radius)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.68)] text-5xl">
-                    🔒
-                  </div>
-                  <div className="absolute right-4 top-4">
-                    <Badge variant="violet">Encrypted</Badge>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="cyan">{product.category}</Badge>
-                    <Badge variant="gray">{statusCopy.badge}</Badge>
-                    {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
-                  </div>
-                </div>
-                <div className="grid gap-5 p-5">
-                  <div className="grid gap-2">
-                    <h3 className="font-head text-2xl font-bold text-text">{product.title}</h3>
-                    <p className="line-clamp-2 text-sm leading-7 text-text2">{product.description}</p>
-                    <span className="text-xs leading-6 text-text2">{statusCopy.subtitle}</span>
-                  </div>
-                  <div className="grid gap-3 text-sm text-text2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Price</span>
-                      <strong className="font-mono text-base text-violet2">◎ {Number(product.priceSol).toFixed(4)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Asset size</span>
-                      <strong>{formatBytes(product.fileSizeBytes)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Access window</span>
-                      <strong>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Reveal limit</span>
-                      <strong>{product.policy.maxAccessCount}</strong>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-[color:var(--border)] pt-4">
-                    <div className="min-w-0">
-                      <div className="text-xs uppercase tracking-[0.1em] text-text3">Publisher</div>
-                      {product.sellerWallet ? <WalletAddress address={product.sellerWallet} shortened /> : <span className="text-sm text-text2">Unknown</span>}
-                    </div>
-                    <Button type="button" variant="cyan" size="sm" onClick={() => void preparePurchase(product)} disabled={busyProductId === product.productIdHex || !canPurchase} loading={busyProductId === product.productIdHex}>
-                      {busyProductId === product.productIdHex ? "Processing..." : "Buy →"}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
 
       {prepared ? (
         <div className="callout callout--success">
-          <div>
-            <strong>Purchase saved to Library</strong>
-            <span className="muted">{prepared.product.title} was paid successfully. Open Library to wait for delivery and reveal it later.</span>
-          </div>
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Purchased</strong>
+          <span className="text-sm text-[color:var(--text2)]">{prepared.product.title} — confirmed on-chain. Open Library to wait for delivery.</span>
         </div>
       ) : null}
+
+      {/* Product list — full width */}
+      <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+
+        {/* Left: product list */}
+        <div className="flex flex-col gap-px bg-[color:var(--border)]">
+          {visibleProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 bg-black p-16 text-center">
+              <span className="text-3xl">🔒</span>
+              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">No active listings</p>
+              <p className="max-w-xs text-xs text-[color:var(--text2)]">New listings appear here after on-chain activation is complete.</p>
+            </div>
+          ) : (
+            visibleProducts.map((product) => {
+              const onchain = onchainProductStates[product.productIdHex];
+              const canPurchase = canPurchaseProduct(product, onchain);
+
+              return (
+                <div key={product.productIdHex} className="flex items-center gap-4 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
+                  {/* Left: category + title */}
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="gray">{product.category}</Badge>
+                      {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                    </div>
+                    <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
+                    <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono text-[color:var(--text3)]">
+                      <span>{formatBytes(product.fileSizeBytes)}</span>
+                      <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
+                      <span>×{product.policy.maxAccessCount}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: price + buy */}
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span className="font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(product.priceSol).toFixed(3)}</span>
+                    <Button
+                      type="button"
+                      variant="violet"
+                      size="sm"
+                      onClick={() => void preparePurchase(product)}
+                      disabled={busyProductId === product.productIdHex || !canPurchase}
+                      loading={busyProductId === product.productIdHex}
+                    >
+                      {busyProductId === product.productIdHex ? "..." : "Buy"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
     </div>
   );

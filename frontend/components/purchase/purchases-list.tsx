@@ -8,11 +8,8 @@ import { PublicKey } from "@solana/web3.js";
 import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, getArciumMxePublicKey, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial, revealArciumDeliveryMaterialWithNonce } from "@/lib/arcium/client";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { WalletAddress } from "@/components/ui/WalletAddress";
-import { StatusIndicator } from "@/components/StatusIndicator";
 import { decryptCiphertext, sha256Hex } from "@/lib/crypto/content";
 import { base64ToBytes, bytesToHex, hexToBytes } from "@/lib/utils/bytes";
 import { type DeliveryKeypair } from "@/lib/crypto/delivery";
@@ -627,144 +624,104 @@ export function PurchasesList() {
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
-        <div className="page-intro__top gap-4">
-          <div>
-            <span className="eyebrow">Library</span>
-            <h2 className="section-title text-3xl md:text-4xl">Purchased items & delivery hub</h2>
-            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Reveal delivered purchases, manage creator-side delivery, and track on-chain entitlement status from one place.</p>
-          </div>
-          <div className="page-intro__meta gap-3">
-            {connectedWallet ? <WalletAddress address={connectedWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
-            <Badge variant="cyan">Custody: {hasPurchases ? "Arcium" : "No purchases yet"}</Badge>
-          </div>
+    <div className="grid gap-px">
+
+      {/* Page header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Library</span>
+          <span className="border border-[color:var(--border2)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">{purchaseCards.length} items</span>
         </div>
-      </section>
+        <div className="flex items-center gap-2">
+          {connectedWallet ? <WalletAddress address={connectedWallet} shortened /> : <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to view</span>}
+        </div>
+      </div>
 
       {isArciumFinalizeBlocked ? (
         <div className="callout callout--info">
-          <strong>Arcium delivery queue is unavailable</strong>
-          <span className="muted">{getArciumFrontendBlockMessage("finalize")}</span>
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Arcium delivery unavailable</strong>
+          <span className="text-sm text-[color:var(--text2)]">{getArciumFrontendBlockMessage("finalize")}</span>
         </div>
       ) : null}
 
       {statusMessage ? (
         <div className="callout callout--success">
-          <strong>Status</strong>
-          <span className="muted">{statusMessage}</span>
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Status</strong>
+          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
         </div>
       ) : null}
 
-      <Card className="p-6 md:p-7">
-        <div>
-          <div>
-            <h2 className="section-title text-2xl md:text-3xl">Library</h2>
-            <p className="muted mt-2 text-sm leading-7">Everything you bought appears here, including creator-side delivery actions when you are the publisher.</p>
-          </div>
-        </div>
-        {purchaseCards.length === 0 ? (
-          <EmptyState icon="📦" title="No purchases yet" description="Complete checkout from Explore to see items here." />
-        ) : (
-          <div className="catalog-grid">
-            {purchaseCards.map(({ purchase, product }) => {
+      {/* Purchase list — full width */}
+      <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+
+        {/* Left: purchase rows */}
+        <div className="flex flex-col gap-px bg-[color:var(--border)]">
+          {purchaseCards.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 bg-black p-16 text-center">
+              <span className="text-3xl">📦</span>
+              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">No purchases yet</p>
+              <p className="max-w-xs text-xs text-[color:var(--text2)]">Complete checkout from Explore to see items here.</p>
+            </div>
+          ) : (
+            purchaseCards.map(({ purchase, product }) => {
               const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
               const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
               const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
               const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
-              const statusVariant: "pending_seal" | "delivered" | "revoked" = effectiveStatus === "revoked"
-                ? "revoked"
-                : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
-                  ? "delivered"
-                  : "pending_seal";
+              const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting";
+              const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : "gray";
+              const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
+              const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
+              const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
 
               return (
-                <Card key={purchase.purchaseIdHex} className="product-card p-0">
-                  <div className="border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(124,58,237,0.16),rgba(12,21,37,0.92),rgba(6,182,212,0.1))] p-5">
-                    <div className="mb-4 flex aspect-video items-center justify-center rounded-[var(--radius)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.68)] text-5xl">
-                      📦
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="cyan">{product?.category ?? "purchase"}</Badge>
-                      <Badge variant="gray">{effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" ? "Delivered" : effectiveStatus === "delivered_arcium" ? "Delivered on-chain" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting delivery"}</Badge>
-                    </div>
-                  </div>
-                  <div className="grid gap-5 p-5">
-                    <div className="grid gap-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h3 className="font-head text-2xl font-bold text-text">{product?.title ?? "Unknown listing"}</h3>
-                        <StatusIndicator status={statusVariant} />
+                <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
+                  <div className="flex items-start gap-4">
+                    {/* Info */}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="gray">{product?.category ?? "purchase"}</Badge>
+                        <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
                       </div>
-                      <span className="muted text-sm leading-7">{product?.description ?? "The matching product data is not available in local storage."}</span>
-                      <span className="asset-stage__lock">
-                      {effectiveStatus === "prepared"
-                        ? "Payment has not been executed yet."
-                        : effectiveStatus === "revoked"
-                          ? "Access was revoked."
-                        : effectiveStatus === "delivered"
-                            ? "Ready to reveal and download."
-                          : effectiveStatus === "pending_arcium"
-                            ? "Seller queued confidential delivery and is waiting for the callback to settle on-chain."
-                          : effectiveStatus === "delivered_arcium"
-                            ? "Delivery callback completed on-chain. Reveal now decrypts the Arcium payload directly from purchase state."
-                            : "Waiting for publisher delivery."}
-                      </span>
+                      <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono text-[color:var(--text3)]">
+                        <span>Access: {onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</span>
+                        <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
+                        {product?.sellerWallet ? <WalletAddress address={product.sellerWallet} shortened /> : null}
+                      </div>
                     </div>
-                  <div className="detail-list">
-                    <div className="detail-row">
-                      <span className="muted">Amount</span>
-                      <strong className="font-mono text-violet2">◎ {Number(purchase.amountSol).toFixed(4)}</strong>
-                    </div>
-                    <div className="detail-row">
-                      <span className="muted">Publisher</span>
-                      <div>{product?.sellerWallet ? <WalletAddress address={product.sellerWallet} /> : <strong>Unknown</strong>}</div>
-                    </div>
-                    <div className="detail-row">
-                      <span className="muted">Access used</span>
-                      <strong>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</strong>
-                    </div>
-                    <div className="detail-row">
-                      <span className="muted">Expires</span>
-                      <strong>{formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "No expiry"}</strong>
-                    </div>
-                    <div className="detail-row">
-                      <span className="muted">Revocable</span>
-                      <strong>{product?.policy.revocable ? "Yes" : "No"}</strong>
-                    </div>
-                    <div className="detail-row">
-                      <span className="muted">Custody</span>
-                      <strong>Arcium</strong>
-                    </div>
+                    {/* Price */}
+                    <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(purchase.amountSol).toFixed(3)}</span>
                   </div>
-                  {isPublishingWallet || isPurchaseWallet ? (
-                    <div className="row pt-2">
-                      {isPublishingWallet && effectiveStatus === "pending_seal" ? (
+
+                  {/* Actions */}
+                  {canReveal || canFinalize || canRevoke ? (
+                    <div className="flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
+                      {canFinalize ? (
                         <Button variant="secondary" size="sm" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Finalizing..." : "Finalize delivery"}
                         </Button>
                       ) : null}
-                      {isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium") ? (
-                        <Button variant="cyan" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
+                      {canReveal ? (
+                        <Button variant="violet" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
                           {busyPurchaseId === purchase.purchaseIdHex ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
                         </Button>
                       ) : null}
-                      {isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable ? (
+                      {canRevoke ? (
                         <Button variant="danger" size="sm" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
-                          {busyPurchaseId === purchase.purchaseIdHex ? "Revoking..." : "Revoke access"}
+                          {busyPurchaseId === purchase.purchaseIdHex ? "Revoking..." : "Revoke"}
                         </Button>
                       ) : null}
                     </div>
                   ) : null}
-                  {!isPublishingWallet && !isPurchaseWallet ? (
-                    <span className="muted">Open this item with the publishing wallet to manage delivery, or with the purchase wallet to reveal it.</span>
-                  ) : null}
-                  </div>
-                </Card>
+                </div>
               );
-            })}
-          </div>
-        )}
-      </Card>
+            })
+          )}
+        </div>
+
+      </div>
+
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
     </div>
   );

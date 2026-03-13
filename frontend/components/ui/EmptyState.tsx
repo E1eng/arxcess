@@ -13,11 +13,11 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.55)] px-6 py-12 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.82)] text-4xl">{icon}</div>
-      <div className="space-y-2">
-        <h3 className="font-head text-2xl font-bold text-text">{title}</h3>
-        <p className="mx-auto max-w-xl text-sm leading-7 text-text2">{description}</p>
+    <div className="flex flex-col items-center justify-center gap-4 border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-14 text-center">
+      <div className="flex h-12 w-12 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface2)] text-2xl">{icon}</div>
+      <div className="grid gap-1.5">
+        <h3 className="font-head text-base font-bold uppercase tracking-[0.06em] text-white">{title}</h3>
+        <p className="mx-auto max-w-sm text-[13px] leading-6 text-[color:var(--text2)]">{description}</p>
       </div>
       {action ? <Button onClick={action.onClick}>{action.label}</Button> : null}
     </div>

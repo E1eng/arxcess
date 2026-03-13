@@ -501,163 +501,144 @@ export function SellerWorkbench() {
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="page-intro rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:rgba(12,21,37,0.64)] p-6 shadow-glass md:p-8">
-        <div className="page-intro__top gap-4">
-          <div>
-            <span className="eyebrow">Launch</span>
-            <h2 className="section-title text-3xl md:text-4xl">Launch encrypted products</h2>
-            <p className="muted mt-3 max-w-2xl text-sm leading-7 md:text-base">Create listing details, encrypt in-browser, set terms, and publish to Solana with Arcium custody.</p>
-          </div>
-          <div className="page-intro__meta gap-3">
-            {sellerWallet ? <WalletAddress address={sellerWallet} /> : <Badge variant="gray">Wallet not connected</Badge>}
-            <Badge variant="cyan">Custody: Arcium</Badge>
-          </div>
-        </div>
-      </section>
+    <div className="grid gap-px">
 
-      <StepIndicator steps={["Product Info", "Upload & Encrypt", "Set Terms", "Publish"]} currentStep={result ? 4 : busy ? 4 : file ? 2 : 1} />
+      {/* Page header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Launch</span>
+          <Badge variant="violet">Arcium Custody</Badge>
+          {isArciumPublishBlocked ? <Badge variant="red">Unavailable</Badge> : <Badge variant="green">Ready</Badge>}
+        </div>
+        <div className="flex items-center gap-2">
+          {sellerWallet ? <WalletAddress address={sellerWallet} shortened /> : <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to publish</span>}
+        </div>
+      </div>
 
       {isArciumPublishBlocked ? (
         <div className="callout callout--info">
-          <strong>Arcium publish is unavailable</strong>
-          <span className="muted">{getArciumFrontendBlockMessage("publish")}</span>
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Arcium unavailable</strong>
+          <span className="text-sm text-[color:var(--text2)]">{getArciumFrontendBlockMessage("publish")}</span>
         </div>
       ) : null}
 
-      <div className="grid grid-2 marketplace-split">
-        <Card className="p-6 md:p-7">
-          <div>
-            <h2 className="section-title text-2xl md:text-3xl">Listing details</h2>
-            <p className="muted mt-2 text-sm leading-7">Add the product info and the file buyers unlock after purchase.</p>
-          </div>
+      {statusMessage ? (
+        <div className="callout callout--info">
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Status</strong>
+          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
+        </div>
+      ) : null}
+
+      {result ? (
+        <div className="callout callout--success">
+          <strong className="text-[11px] uppercase tracking-[0.08em]">Published</strong>
+          <span className="text-sm text-[color:var(--text2)]">
+            {result.activationRequired
+              ? `${result.listing.title} — waiting for Arcium callback to settle before activation.`
+              : `${result.listing.title} is live in Explore.`}
+          </span>
+          {result.activationRequired ? (
+            <Button type="button" size="sm" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
+              {activatingResult ? "Activating..." : "Activate listing"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* 2-col: form left, preview right */}
+      <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)] lg:grid-cols-[1fr_300px]">
+
+        {/* Left: form */}
+        <div className="bg-[color:var(--surface)] p-6">
           <form className="grid gap-5" onSubmit={handleSubmit}>
-            <Input label="Product Name" name="title" required value={form.title} onChange={handleInputChange} placeholder="Premium concept art pack" />
-            <Textarea label="Description" name="description" required value={form.description} onChange={handleInputChange} placeholder="Explain what unlocks after purchase." />
+            <Input label="Product name" name="title" required value={form.title} onChange={handleInputChange} placeholder="e.g. Premium design kit" />
+            <Textarea label="Description" name="description" required value={form.description} onChange={handleInputChange} placeholder="What does the buyer get after purchase?" />
             <div className="grid grid-2">
               <Select label="Category" name="category" value={form.category} onChange={handleInputChange}>
-                  <option value="ebook">ebook</option>
-                  <option value="code">code</option>
-                  <option value="image">image</option>
-                  <option value="template">template</option>
-                  <option value="dataset">dataset</option>
+                <option value="ebook">ebook</option>
+                <option value="code">code</option>
+                <option value="image">image</option>
+                <option value="template">template</option>
+                <option value="dataset">dataset</option>
               </Select>
-              <Input label="Price" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" suffix="SOL" />
+              <Input label="Price (SOL)" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" />
             </div>
             <div className="grid grid-2">
-              <Input label="Access Window (days)" name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" hint="Buyer access expires after N days." />
-              <Input label="Reveal Limit" name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" hint="Max times buyer can download." />
+              <Input label="Access window (days)" name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" />
+              <Input label="Reveal limit" name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" />
             </div>
             <label className="checkbox-field">
               <input type="checkbox" name="revocable" checked={form.revocable} onChange={handleInputChange} />
               <span>
                 <strong>Revocable access</strong>
-                <span className="muted">Allow this purchase to be revoked later.</span>
+                <span className="muted">Allow revoking buyer access after sale.</span>
               </span>
             </label>
-            <label className="grid gap-3 text-sm text-text">
-              <span className="font-medium">Upload & Encrypt</span>
-              <div className="rounded-[var(--radius-lg)] border border-dashed border-[color:var(--border2)] bg-[color:rgba(17,30,51,0.45)] p-5 text-center">
-                <div className="text-sm font-medium text-text">Drag & drop your file here</div>
-                <div className="mt-1 text-xs text-text2">Supported: PDF, ZIP, PNG, MP4, etc</div>
-                <div className="mt-1 text-xs text-text3">Max size depends on your browser and storage upload limits</div>
+            <label className="grid gap-2 text-sm text-[color:var(--text2)]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.08em]">Asset file</span>
+              <div className="border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] p-4 text-center text-[12px] text-[color:var(--text2)]">
+                {file ? (
+                  <span className="font-mono text-[color:var(--violet2)]">{file.name} · {formatBytes(file.size)}</span>
+                ) : (
+                  "Select file — encrypted in browser before upload"
+                )}
               </div>
               <input
                 type="file"
                 required
-                onChange={(event) => {
-                  setFile(event.target.files?.[0] ?? null);
-                }}
+                className="text-[11px] text-[color:var(--text2)]"
+                onChange={(event) => { setFile(event.target.files?.[0] ?? null); }}
               />
             </label>
-            {file ? <Badge variant="cyan">Will be encrypted in browser before upload</Badge> : null}
-            <div className="row">
-              <Button type="submit" disabled={busy || !file || isArciumPublishBlocked} loading={busy}>
-                {busy ? "Publishing..." : "Sign & Publish on Solana"}
-              </Button>
-            </div>
+            <Button type="submit" size="lg" disabled={busy || !file || isArciumPublishBlocked} loading={busy}>
+              {busy ? "Publishing..." : "Sign & publish on Solana"}
+            </Button>
           </form>
-          {statusMessage ? (
-            <div className="callout callout--info">
-              <strong>Publish status</strong>
-              <span className="muted">{statusMessage}</span>
-            </div>
-          ) : null}
-        </Card>
+        </div>
 
-        <Card className="accent-card p-6 md:p-7">
-          <div>
-            <Badge variant="violet">Preview</Badge>
-            <h3 className="section-title mt-4 text-2xl md:text-3xl">Listing preview</h3>
-            <p className="muted mt-2 text-sm leading-7">Check the title, file, and state before publishing.</p>
+        {/* Right: listing preview */}
+        <div className="flex flex-col bg-[color:var(--surface)]">
+          <div className="border-b border-[color:var(--border)] px-4 py-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--text2)]">Preview</span>
           </div>
-          <div className="asset-stage">
-            <div className="asset-stage__media">
-              <div className="asset-preview-frame">
-                {previewMode === "image" && filePreviewUrl ? (
-                  <Image className="asset-preview-image" src={filePreviewUrl} alt={file?.name ?? "Selected asset preview"} fill unoptimized />
-                ) : (
-                  <div className="asset-preview-placeholder">
-                    <span className="badge">{file ? (file.type || "file").split("/")[0] : "No asset"}</span>
-                    <strong>{file ? file.name : "Upload a file to preview it here"}</strong>
-                    <span className="muted">
-                      {file
-                        ? "Preview is ready. The full file only unlocks after purchase and delivery."
-                        : "Add a file to preview the locked product card before publishing."}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <Badge variant="violet">Encrypted asset</Badge>
-              <strong>{form.title || "Untitled listing"}</strong>
-              <span className="muted">{selectedAssetLabel}</span>
-              <span className="asset-stage__lock">Locked until purchase</span>
+          <div className="flex flex-1 flex-col gap-0 p-4">
+            {/* File preview */}
+            <div className="mb-4 border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] p-4">
+              {previewMode === "image" && filePreviewUrl ? (
+                <div className="relative aspect-video w-full overflow-hidden">
+                  <Image className="object-cover" src={filePreviewUrl} alt={file?.name ?? "preview"} fill unoptimized />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5 py-1">
+                  <Badge variant={file ? "violet" : "gray"}>{file ? (file.type || "file").split("/")[0] : "No file"}</Badge>
+                  <strong className="text-sm text-white">{file ? file.name : "No file selected"}</strong>
+                  <span className="text-[11px] text-[color:var(--text2)]">
+                    {file ? "Will be encrypted before upload." : "Select a file to see preview."}
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-          <div className="detail-list">
-            <div className="detail-row">
-              <span className="muted">Category</span>
-              <strong>{form.category}</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">File</span>
-              <strong>{selectedAssetLabel}</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">Access window</span>
-              <strong>{formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)}</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">Reveal limit</span>
-              <strong>{form.maxAccessCount}</strong>
-            </div>
-            <div className="detail-row">
-              <span className="muted">Revocable</span>
-              <strong>{form.revocable ? "Yes" : "No"}</strong>
+            {/* Detail rows */}
+            <div className="detail-list flex-1">
+              {[
+                ["Title", form.title || "—"],
+                ["Category", form.category],
+                ["Price", `◎ ${form.priceSol || "—"}`],
+                ["Access", formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)],
+                ["Reveals", `${form.maxAccessCount}×`],
+                ["Revocable", form.revocable ? "Yes" : "No"]
+              ].map(([k, v]) => (
+                <div key={k} className="detail-row">
+                  <span className="text-[11px] text-[color:var(--text2)]">{k}</span>
+                  <strong className="text-[11px] text-white">{v}</strong>
+                </div>
+              ))}
             </div>
           </div>
-        </Card>
+        </div>
+
       </div>
 
-      {result ? (
-        <div className="callout callout--success">
-          <div>
-            <strong>Listing published</strong>
-            <span className="muted">
-              {result.activationRequired
-                ? `${result.listing.title} is waiting for seller activation after the confidential callback settles.`
-                : `${result.listing.title} is now live in Explore. New orders will show up in Library until delivery is ready.`}
-            </span>
-          </div>
-          {result.activationRequired ? (
-            <div className="row">
-              <Button type="button" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
-                {activatingResult ? "Activating..." : "Activate listing"}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
     </div>
   );

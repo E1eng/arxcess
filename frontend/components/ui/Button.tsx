@@ -12,18 +12,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:   "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
-  secondary: "border border-[color:var(--border2)] bg-[color:var(--surface2)] text-[color:var(--text)] hover:border-[#6B50FF] hover:text-white",
+  secondary: "border border-[color:var(--border2)] bg-[color:var(--surface2)] text-[color:var(--text)] hover:border-[#6B50FF]",
   ghost:     "border border-[color:var(--border)] bg-transparent text-[color:var(--text2)] hover:bg-[color:var(--surface2)] hover:text-[color:var(--text)]",
   cyan:      "border border-[color:var(--cyan)] bg-[color:var(--cyan)] text-black hover:opacity-90",
   violet:    "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
-  danger:    "border border-[color:rgba(239,68,68,0.4)] bg-[color:rgba(239,68,68,0.1)] text-[color:var(--red)] hover:bg-[color:rgba(239,68,68,0.18)]",
+  danger:    "border border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.1)] text-[color:var(--red)] hover:bg-[rgba(239,68,68,0.18)]",
   outline:   "border border-[#6B50FF] bg-transparent text-[#9B8FFF] hover:bg-[#6B50FF] hover:text-white"
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm:   "h-8 px-3 text-[11px] tracking-[0.06em] uppercase font-bold",
-  md:   "h-9 px-4 text-[12px] tracking-[0.08em] uppercase font-bold",
-  lg:   "h-11 px-6 text-[13px] tracking-[0.1em] uppercase font-bold",
+  sm:   "h-8 px-3 text-[11px] font-bold uppercase tracking-[0.06em]",
+  md:   "h-9 px-4 text-[12px] font-bold uppercase tracking-[0.08em]",
+  lg:   "h-11 px-6 text-[12px] font-bold uppercase tracking-[0.1em]",
   icon: "h-8 w-8 px-0 text-sm"
 };
 

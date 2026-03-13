@@ -503,7 +503,7 @@ export function SellerWorkbench() {
   return (
     <div className="grid gap-px">
 
-      {/* Page header */}
+      {/* Page header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Launch</span>
@@ -511,41 +511,46 @@ export function SellerWorkbench() {
           {isArciumPublishBlocked ? <Badge variant="red">Unavailable</Badge> : <Badge variant="green">Ready</Badge>}
         </div>
         <div className="flex items-center gap-2">
-          {sellerWallet ? <WalletAddress address={sellerWallet} shortened /> : <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to publish</span>}
+          {sellerWallet ? (
+            <WalletAddress address={sellerWallet} shortened />
+          ) : (
+            <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to publish</span>
+          )}
         </div>
       </div>
 
+      {/* Status callouts */}
       {isArciumPublishBlocked ? (
         <div className="callout callout--info">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Arcium unavailable</strong>
-          <span className="text-sm text-[color:var(--text2)]">{getArciumFrontendBlockMessage("publish")}</span>
+          <strong>Arcium unavailable</strong>
+          <span className="text-[color:var(--text2)]">{getArciumFrontendBlockMessage("publish")}</span>
         </div>
       ) : null}
 
       {statusMessage ? (
         <div className="callout callout--info">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Status</strong>
-          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
+          <strong>Status</strong>
+          <span className="text-[color:var(--text2)]">{statusMessage}</span>
         </div>
       ) : null}
 
       {result ? (
         <div className="callout callout--success">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Published</strong>
-          <span className="text-sm text-[color:var(--text2)]">
+          <strong>Published!</strong>
+          <span className="text-[color:var(--text2)]">
             {result.activationRequired
-              ? `${result.listing.title} — waiting for Arcium callback to settle before activation.`
-              : `${result.listing.title} is live in Explore.`}
+              ? `${result.listing.title} — waiting for Arcium callback before activation.`
+              : `${result.listing.title} is now live in Explore.`}
           </span>
           {result.activationRequired ? (
-            <Button type="button" size="sm" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
               {activatingResult ? "Activating..." : "Activate listing"}
             </Button>
           ) : null}
         </div>
       ) : null}
 
-      {/* 2-col: form left, preview right */}
+      {/* 2-col: form left, preview+panels right */}
       <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)] lg:grid-cols-[1fr_300px]">
 
         {/* Left: form */}
@@ -553,19 +558,19 @@ export function SellerWorkbench() {
           <form className="grid gap-5" onSubmit={handleSubmit}>
             <Input label="Product name" name="title" required value={form.title} onChange={handleInputChange} placeholder="e.g. Premium design kit" />
             <Textarea label="Description" name="description" required value={form.description} onChange={handleInputChange} placeholder="What does the buyer get after purchase?" />
-            <div className="grid grid-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Select label="Category" name="category" value={form.category} onChange={handleInputChange}>
-                <option value="ebook">ebook</option>
-                <option value="code">code</option>
-                <option value="image">image</option>
-                <option value="template">template</option>
-                <option value="dataset">dataset</option>
+                <option value="ebook">eBook</option>
+                <option value="code">Code</option>
+                <option value="image">Image</option>
+                <option value="template">Template</option>
+                <option value="dataset">Dataset</option>
               </Select>
-              <Input label="Price (SOL)" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" />
+              <Input label="Price (SOL)" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" suffix="SOL" />
             </div>
-            <div className="grid grid-2">
-              <Input label="Access window (days)" name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" />
-              <Input label="Reveal limit" name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input label="Access window (days)" name="licenseDurationDays" required inputMode="numeric" value={form.licenseDurationDays} onChange={handleInputChange} placeholder="30" hint="Buyer access expires after N days" />
+              <Input label="Reveal limit" name="maxAccessCount" required inputMode="numeric" value={form.maxAccessCount} onChange={handleInputChange} placeholder="3" hint="Max times buyer can download" />
             </div>
             <label className="checkbox-field">
               <input type="checkbox" name="revocable" checked={form.revocable} onChange={handleInputChange} />
@@ -574,69 +579,86 @@ export function SellerWorkbench() {
                 <span className="muted">Allow revoking buyer access after sale.</span>
               </span>
             </label>
-            <label className="grid gap-2 text-sm text-[color:var(--text2)]">
-              <span className="text-[11px] font-bold uppercase tracking-[0.08em]">Asset file</span>
-              <div className="border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] p-4 text-center text-[12px] text-[color:var(--text2)]">
+
+            {/* File upload */}
+            <label className="grid gap-2 cursor-pointer">
+              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)]">Asset file</span>
+              <div className="border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] p-5 text-center transition-colors hover:border-[#6B50FF]">
                 {file ? (
-                  <span className="font-mono text-[color:var(--violet2)]">{file.name} · {formatBytes(file.size)}</span>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className="font-mono text-[13px] font-medium text-[#9B8FFF]">{file.name}</span>
+                    <span className="text-[11px] text-[color:var(--text2)]">{formatBytes(file.size)} · Will be encrypted before upload</span>
+                  </div>
                 ) : (
-                  "Select file — encrypted in browser before upload"
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-[13px] text-[color:var(--text2)]">Click to select a file</span>
+                    <span className="text-[11px] text-[color:var(--text2)]">Any format · Encrypted in-browser before upload</span>
+                  </div>
                 )}
               </div>
-              <input
-                type="file"
-                required
-                className="text-[11px] text-[color:var(--text2)]"
-                onChange={(event) => { setFile(event.target.files?.[0] ?? null); }}
-              />
+              <input type="file" required className="sr-only" onChange={(event) => { setFile(event.target.files?.[0] ?? null); }} />
             </label>
+
             <Button type="submit" size="lg" disabled={busy || !file || isArciumPublishBlocked} loading={busy}>
-              {busy ? "Publishing..." : "Sign & publish on Solana"}
+              {busy ? "Publishing..." : "Sign & Publish on Solana »"}
             </Button>
           </form>
         </div>
 
-        {/* Right: listing preview */}
-        <div className="flex flex-col bg-[color:var(--surface)]">
-          <div className="border-b border-[color:var(--border)] px-4 py-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--text2)]">Preview</span>
-          </div>
-          <div className="flex flex-1 flex-col gap-0 p-4">
-            {/* File preview */}
-            <div className="mb-4 border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] p-4">
-              {previewMode === "image" && filePreviewUrl ? (
-                <div className="relative aspect-video w-full overflow-hidden">
-                  <Image className="object-cover" src={filePreviewUrl} alt={file?.name ?? "preview"} fill unoptimized />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-1.5 py-1">
-                  <Badge variant={file ? "violet" : "gray"}>{file ? (file.type || "file").split("/")[0] : "No file"}</Badge>
-                  <strong className="text-sm text-white">{file ? file.name : "No file selected"}</strong>
-                  <span className="text-[11px] text-[color:var(--text2)]">
-                    {file ? "Will be encrypted before upload." : "Select a file to see preview."}
-                  </span>
-                </div>
-              )}
-            </div>
-            {/* Detail rows */}
-            <div className="detail-list flex-1">
-              {[
-                ["Title", form.title || "—"],
-                ["Category", form.category],
-                ["Price", `◎ ${form.priceSol || "—"}`],
-                ["Access", formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)],
-                ["Reveals", `${form.maxAccessCount}×`],
-                ["Revocable", form.revocable ? "Yes" : "No"]
-              ].map(([k, v]) => (
-                <div key={k} className="detail-row">
-                  <span className="text-[11px] text-[color:var(--text2)]">{k}</span>
-                  <strong className="text-[11px] text-white">{v}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Right: preview + hash panels */}
+        <div className="flex flex-col gap-px bg-[color:var(--border)]">
 
+          {/* #P Preview */}
+          <div className="bg-[color:var(--surface)]">
+            <div className="flex items-center justify-between bg-[#6B50FF] px-4 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white">Preview</span>
+              <span className="font-mono text-[10px] text-white/60">#P</span>
+            </div>
+            <div className="p-4">
+              {/* File area */}
+              <div className="relative mb-3 flex min-h-[100px] items-center justify-center border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)]">
+                {previewMode === "image" && filePreviewUrl ? (
+                  <Image className="object-cover" src={filePreviewUrl} alt={file?.name ?? "preview"} fill unoptimized />
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5 py-3">
+                    <Badge variant={file ? "violet" : "gray"}>{file ? (file.type?.split("/")[0] ?? "file") : "no file"}</Badge>
+                    <span className="text-[11px] text-[color:var(--text2)]">{file ? file.name : "No file selected"}</span>
+                  </div>
+                )}
+              </div>
+              <strong className="block text-[13px] font-bold text-white">{form.title || "Product name"}</strong>
+              <p className="mt-0.5 text-[11px] leading-5 text-[color:var(--text2)] line-clamp-2">{form.description || "Description will appear here."}</p>
+              {/* Detail rows */}
+              <div className="detail-list mt-3">
+                {[
+                  ["Price", `◎ ${form.priceSol || "—"}`],
+                  ["Access", formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)],
+                  ["Reveals", `${form.maxAccessCount}×`],
+                  ["Revocable", form.revocable ? "Yes" : "No"]
+                ].map(([k, v]) => (
+                  <div key={k} className="detail-row">
+                    <span className="text-[11px] text-[color:var(--text2)]">{k}</span>
+                    <strong className="text-[11px] text-white">{v}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* #1 Custody */}
+          <div className="bg-[color:var(--surface)]">
+            <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-[#6B50FF] px-4 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white">Arcium Custody</span>
+              <span className="font-mono text-[10px] text-white/60">#1</span>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[12px] leading-5 text-[color:var(--text2)]">
+                Encryption key held in Arcium confidential state. Released only after on-chain payment is confirmed.
+              </p>
+            </div>
+          </div>
+
+        </div>
       </div>
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />

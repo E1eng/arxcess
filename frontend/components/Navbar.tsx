@@ -31,10 +31,10 @@ export function Navbar() {
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
             <polygon points="11,2 20,19 2,19" fill="#6B50FF" />
           </svg>
-          <span className="font-head text-[15px] font-bold tracking-[0.06em] uppercase text-white">
+          <span className="font-head text-[14px] font-bold uppercase tracking-[0.08em] text-white">
             Arxcess
           </span>
         </Link>
@@ -48,9 +48,9 @@ export function Navbar() {
                 key={link.href}
                 href={link.href as Route}
                 className={cn(
-                  "px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors duration-150",
+                  "px-4 py-2 text-[11px] font-bold uppercase tracking-[0.1em] transition-colors duration-150",
                   active
-                    ? "text-white"
+                    ? "text-[#9B8FFF]"
                     : "text-[color:var(--text2)] hover:text-white"
                 )}
               >
@@ -63,8 +63,8 @@ export function Navbar() {
         {/* Wallet action */}
         <div className="flex items-center gap-3">
           {address ? (
-            <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] font-mono text-[color:var(--text2)]">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-green animate-pulseSoft" />
+            <span className="hidden md:inline-flex items-center gap-1.5 font-mono text-[11px] text-[color:var(--text2)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--green)] animate-pulseSoft" />
               {shortenAddress(address)}
             </span>
           ) : null}
@@ -94,8 +94,8 @@ export function Navbar() {
                 key={link.href}
                 href={link.href as Route}
                 className={cn(
-                  "block px-2 py-2.5 text-[12px] font-semibold uppercase tracking-[0.1em] border-b border-[color:var(--border)] last:border-b-0 transition-colors",
-                  active ? "text-white" : "text-[color:var(--text2)]"
+                  "block px-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.1em] border-b border-[color:var(--border)] last:border-b-0 transition-colors",
+                  active ? "text-[#9B8FFF]" : "text-[color:var(--text2)]"
                 )}
                 onClick={() => setMobileOpen(false)}
               >

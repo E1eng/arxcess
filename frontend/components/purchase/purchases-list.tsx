@@ -130,6 +130,8 @@ async function resolveVerifiedDeliveryMaterial(args: {
   throw new Error("Arcium delivery content key does not match the on-chain product key commitment.");
 }
 
+type StatusFilter = "all" | "waiting" | "delivered" | "revoked";
+
 export function PurchasesList() {
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet();
@@ -144,13 +146,21 @@ export function PurchasesList() {
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
   const [revealedPurchaseId, setRevealedPurchaseId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  // Filter purchases by connected wallet only
+  const myPurchases = useMemo(
+    () => connectedWallet ? purchases.filter((p) => p.buyerWallet === connectedWallet) : [],
+    [purchases, connectedWallet]
+  );
+
   const purchaseCards = useMemo(
     () =>
-      purchases.map((purchase) => ({
+      myPurchases.map((purchase) => ({
         purchase,
         product: products.find((product) => product.productIdHex === purchase.productIdHex) ?? null
       })),
-    [products, purchases]
+    [products, myPurchases]
   );
   const hasPurchases = purchaseCards.length > 0;
   const isArciumFinalizeBlocked = hasPurchases && !isArciumFrontendRuntimeReady();
@@ -623,103 +633,173 @@ export function PurchasesList() {
     }
   }
 
-  return (
-    <div className="grid gap-px">
+  // Stats derived from purchaseCards
+  const totalSpentSol = purchaseCards.reduce((sum, { purchase }) => sum + Number(purchase.amountSol), 0);
+  const deliveredCount = purchaseCards.filter(({ purchase }) => {
+    const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
+    const status = resolveEffectivePurchaseStatus(onchain, purchase.status);
+    return status === "delivered" || status === "delivered_arcium";
+  }).length;
 
-      {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Library</span>
-          <span className="border border-[color:var(--border2)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">{purchaseCards.length} items</span>
+  // Filtered purchase cards by status
+  const filteredCards = purchaseCards.filter(({ purchase }) => {
+    if (statusFilter === "all") return true;
+    const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
+    const status = resolveEffectivePurchaseStatus(onchain, purchase.status);
+    if (statusFilter === "delivered") return status === "delivered" || status === "delivered_arcium";
+    if (statusFilter === "revoked") return status === "revoked";
+    if (statusFilter === "waiting") return status !== "delivered" && status !== "delivered_arcium" && status !== "revoked";
+    return true;
+  });
+
+  // ── Wallet guard ──────────────────────────────────────────
+  if (!connectedWallet) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Library</h1>
+        <div className="flex flex-col items-center justify-center gap-5 border border-[color:var(--border)] bg-[color:var(--surface)] px-8 py-20 text-center">
+          <span className="font-mono text-3xl text-[color:var(--text3)]">🔒</span>
+          <div>
+            <p className="font-head text-[14px] font-bold uppercase tracking-[0.08em] text-white">Wallet required</p>
+            <p className="mt-1.5 max-w-[34ch] text-[12px] leading-5 text-[color:var(--text2)]">
+              Connect your Solana wallet to view your purchased items. Only purchases made with the connected wallet are shown.
+            </p>
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text3)]">
+            Use the Connect Wallet button in the sidebar →
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          {connectedWallet ? <WalletAddress address={connectedWallet} shortened /> : <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to view</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+
+      {/* ── Page header ──────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Library</h1>
+          <WalletAddress address={connectedWallet} shortened />
         </div>
       </div>
 
+      {/* ── Stats bar ────────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+        {[
+          { label: "Total assets", value: String(purchaseCards.length) },
+          { label: "Total spent",  value: `◎ ${totalSpentSol.toFixed(3)}` },
+          { label: "Delivered",    value: String(deliveredCount) }
+        ].map(({ label, value }) => (
+          <div key={label} className="flex flex-col gap-0.5 bg-[color:var(--surface)] px-4 py-3">
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">{label}</span>
+            <span className="font-mono text-[16px] font-bold text-white">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Callouts ─────────────────────────────────────────── */}
       {isArciumFinalizeBlocked ? (
         <div className="callout callout--info">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Arcium delivery unavailable</strong>
-          <span className="text-sm text-[color:var(--text2)]">{getArciumFrontendBlockMessage("finalize")}</span>
+          <strong>Arcium delivery unavailable</strong>
+          <span className="text-[color:var(--text2)]">{getArciumFrontendBlockMessage("finalize")}</span>
         </div>
       ) : null}
 
       {statusMessage ? (
         <div className="callout callout--success">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Status</strong>
-          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
+          <strong>Success</strong>
+          <span className="text-[color:var(--text2)]">{statusMessage}</span>
         </div>
       ) : null}
 
-      {/* Purchase list — full width */}
-      <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+      {/* ── Status filter pills ───────────────────────────────── */}
+      <div className="flex flex-wrap gap-1.5">
+        {(["all", "waiting", "delivered", "revoked"] as StatusFilter[]).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => setStatusFilter(f)}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] border transition-colors ${
+              statusFilter === f
+                ? "border-[#6B50FF] bg-[#6B50FF] text-white"
+                : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"
+            }`}
+          >
+            {f}
+            {f === "all" ? ` (${purchaseCards.length})` : null}
+          </button>
+        ))}
+      </div>
 
-        {/* Left: purchase rows */}
-        <div className="flex flex-col gap-px bg-[color:var(--border)]">
-          {purchaseCards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 bg-black p-16 text-center">
-              <span className="text-3xl">📦</span>
-              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">No purchases yet</p>
-              <p className="max-w-xs text-xs text-[color:var(--text2)]">Complete checkout from Explore to see items here.</p>
-            </div>
-          ) : (
-            purchaseCards.map(({ purchase, product }) => {
-              const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
-              const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
-              const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
-              const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
-              const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting";
-              const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : "gray";
-              const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
-              const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
-              const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
+      {/* ── Purchase list ─────────────────────────────────────── */}
+      <div className="flex flex-col gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+        {filteredCards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 bg-[color:var(--surface)] p-16 text-center">
+            <span className="text-3xl">📦</span>
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">
+              {purchaseCards.length === 0 ? "No purchases yet" : "No items match this filter"}
+            </p>
+            <p className="max-w-xs text-xs text-[color:var(--text2)]">
+              {purchaseCards.length === 0
+                ? "Complete checkout from Explore to see items here."
+                : "Try switching to a different filter."}
+            </p>
+          </div>
+        ) : (
+          filteredCards.map(({ purchase, product }) => {
+            const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
+            const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
+            const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
+            const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
+            const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting";
+            const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : "gray";
+            const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
+            const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
+            const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
+            const isBusy = busyPurchaseId === purchase.purchaseIdHex;
 
-              return (
-                <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
-                  <div className="flex items-start gap-4">
-                    {/* Info */}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                        <Badge variant="gray">{product?.category ?? "purchase"}</Badge>
-                        <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-                      </div>
-                      <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono text-[color:var(--text3)]">
-                        <span>Access: {onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</span>
-                        <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
-                        {product?.sellerWallet ? <WalletAddress address={product.sellerWallet} shortened /> : null}
-                      </div>
+            return (
+              <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
+                <div className="flex items-start gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+                      {product?.category ? <Badge variant="gray">{product.category}</Badge> : null}
                     </div>
-                    {/* Price */}
-                    <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                    <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
+                      <span>◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                      <span>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`} reveals</span>
+                      <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
+                    </div>
                   </div>
-
-                  {/* Actions */}
-                  {canReveal || canFinalize || canRevoke ? (
-                    <div className="flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
-                      {canFinalize ? (
-                        <Button variant="secondary" size="sm" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
-                          {busyPurchaseId === purchase.purchaseIdHex ? "Finalizing..." : "Finalize delivery"}
-                        </Button>
-                      ) : null}
-                      {canReveal ? (
-                        <Button variant="violet" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
-                          {busyPurchaseId === purchase.purchaseIdHex ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again" : "Reveal & download"}
-                        </Button>
-                      ) : null}
-                      {canRevoke ? (
-                        <Button variant="danger" size="sm" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={busyPurchaseId === purchase.purchaseIdHex} loading={busyPurchaseId === purchase.purchaseIdHex}>
-                          {busyPurchaseId === purchase.purchaseIdHex ? "Revoking..." : "Revoke"}
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(purchase.amountSol).toFixed(3)}</span>
                 </div>
-              );
-            })
-          )}
-        </div>
 
+                {canReveal || canFinalize || canRevoke ? (
+                  <div className="flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
+                    {canFinalize ? (
+                      <Button variant="secondary" size="sm" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
+                        {isBusy ? "Finalizing..." : "Finalize delivery"}
+                      </Button>
+                    ) : null}
+                    {canReveal ? (
+                      <Button variant="violet" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
+                        {isBusy ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again »" : "Reveal & download »"}
+                      </Button>
+                    ) : null}
+                    {canRevoke ? (
+                      <Button variant="danger" size="sm" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
+                        {isBusy ? "Revoking..." : "Revoke"}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
       </div>
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />

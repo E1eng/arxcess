@@ -15,6 +15,9 @@ import { type LocalProductListing, type LocalPurchaseIntent, saveStoredPurchase 
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
 
+const CATEGORIES = ["ebook", "code", "image", "template", "dataset"] as const;
+type SortKey = "default" | "price_asc" | "price_desc";
+
 export function ProductCatalog() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
@@ -25,6 +28,9 @@ export function ProductCatalog() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortKey>("default");
   const [prepared, setPrepared] = useState<
     | {
         product: LocalProductListing;
@@ -105,6 +111,25 @@ export function ProductCatalog() {
     () => products.filter((product) => canPurchaseProduct(product, onchainProductStates[product.productIdHex])),
     [onchainProductStates, products]
   );
+
+  const filteredProducts = useMemo(() => {
+    let result = visibleProducts;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (p) => p.title.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
+      );
+    }
+    if (categoryFilter) {
+      result = result.filter((p) => p.category === categoryFilter);
+    }
+    if (sort === "price_asc") {
+      result = [...result].sort((a, b) => Number(a.priceSol) - Number(b.priceSol));
+    } else if (sort === "price_desc") {
+      result = [...result].sort((a, b) => Number(b.priceSol) - Number(a.priceSol));
+    }
+    return result;
+  }, [visibleProducts, search, categoryFilter, sort]);
 
   async function preparePurchase(product: LocalProductListing) {
     if (!publicKey || !sendTransaction) {
@@ -195,94 +220,161 @@ export function ProductCatalog() {
   }
 
   return (
-    <div className="grid gap-px">
+    <div className="flex flex-col gap-4">
 
-      {/* Page header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border border-[color:var(--border)] bg-[color:var(--surface)] px-5 py-3">
+      {/* ── Page header ──────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text2)]">Explore</span>
-          <span className="border border-[color:var(--border2)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">{visibleProducts.length} active</span>
+          <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Explore</h1>
+          <span className="border border-[color:var(--border2)] px-2 py-0.5 font-mono text-[10px] text-[color:var(--text2)]">
+            {filteredProducts.length}/{visibleProducts.length}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
-          {connectedWallet ? (
-            <span className="flex items-center gap-1.5 font-mono text-[11px] text-[color:var(--text2)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--green)]" />
-              {connectedWallet.slice(0, 4)}…{connectedWallet.slice(-4)}
-            </span>
-          ) : (
-            <span className="text-[11px] text-[color:var(--text2)]">Connect wallet to purchase</span>
-          )}
-        </div>
+        {/* Sort */}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          className="border border-[color:var(--border2)] bg-black px-2 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)] focus:outline-none focus:border-[#6B50FF]"
+        >
+          <option value="default">Sort: Default</option>
+          <option value="price_asc">Price: Low → High</option>
+          <option value="price_desc">Price: High → Low</option>
+        </select>
       </div>
 
-      {/* Status / checkout feedback */}
+      {/* ── Search bar ───────────────────────────────────────── */}
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[color:var(--text3)]">⌕</span>
+        <input
+          type="text"
+          placeholder="Search products..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full border border-[color:var(--border)] bg-[color:var(--surface)] py-2 pl-8 pr-4 text-[12px] text-white placeholder:text-[color:var(--text3)] focus:border-[#6B50FF] focus:outline-none"
+        />
+        {search ? (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[color:var(--text3)] hover:text-white"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
+
+      {/* ── Category filter pills ─────────────────────────────── */}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => setCategoryFilter(null)}
+          className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] border transition-colors ${
+            categoryFilter === null
+              ? "border-[#6B50FF] bg-[#6B50FF] text-white"
+              : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"
+          }`}
+        >
+          All
+        </button>
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] border transition-colors ${
+              categoryFilter === cat
+                ? "border-[#6B50FF] bg-[#6B50FF] text-white"
+                : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Status callouts */}
       {statusMessage ? (
         <div className="callout callout--info">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Checkout</strong>
-          <span className="text-sm text-[color:var(--text2)]">{statusMessage}</span>
+          <strong>Checkout</strong>
+          <span className="text-[color:var(--text2)]">{statusMessage}</span>
         </div>
       ) : null}
 
       {prepared ? (
         <div className="callout callout--success">
-          <strong className="text-[11px] uppercase tracking-[0.08em]">Purchased</strong>
-          <span className="text-sm text-[color:var(--text2)]">{prepared.product.title} — confirmed on-chain. Open Library to wait for delivery.</span>
+          <strong>Purchase confirmed</strong>
+          <span className="text-[color:var(--text2)]">{prepared.product.title} — open Library to wait for delivery.</span>
         </div>
       ) : null}
 
-      {/* Product list — full width */}
-      <div className="grid gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+      {/* ── Product list ─────────────────────────────────────── */}
+      <div className="flex flex-col gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+        {filteredProducts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 bg-[color:var(--surface)] p-16 text-center">
+            <span className="text-3xl">🔒</span>
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">
+              {visibleProducts.length === 0 ? "No active listings" : "No results"}
+            </p>
+            <p className="max-w-xs text-xs text-[color:var(--text2)]">
+              {visibleProducts.length === 0
+                ? "New listings appear after on-chain activation is complete."
+                : "Try a different search or filter."}
+            </p>
+            {(search || categoryFilter) ? (
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setCategoryFilter(null); }}
+                className="mt-1 border border-[color:var(--border2)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)] hover:border-white hover:text-white"
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          filteredProducts.map((product) => {
+            const onchain = onchainProductStates[product.productIdHex];
+            const canPurchase = canPurchaseProduct(product, onchain);
+            const isBusy = busyProductId === product.productIdHex;
 
-        {/* Left: product list */}
-        <div className="flex flex-col gap-px bg-[color:var(--border)]">
-          {visibleProducts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 bg-black p-16 text-center">
-              <span className="text-3xl">🔒</span>
-              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">No active listings</p>
-              <p className="max-w-xs text-xs text-[color:var(--text2)]">New listings appear here after on-chain activation is complete.</p>
-            </div>
-          ) : (
-            visibleProducts.map((product) => {
-              const onchain = onchainProductStates[product.productIdHex];
-              const canPurchase = canPurchaseProduct(product, onchain);
-
-              return (
-                <div key={product.productIdHex} className="flex items-center gap-4 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
-                  {/* Left: category + title */}
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant="gray">{product.category}</Badge>
-                      {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
-                    </div>
-                    <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
-                    <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
-                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono text-[color:var(--text3)]">
-                      <span>{formatBytes(product.fileSizeBytes)}</span>
-                      <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
-                      <span>×{product.policy.maxAccessCount}</span>
-                    </div>
+            return (
+              <div key={product.productIdHex} className="flex items-center gap-4 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
+                {/* Info */}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="gray">{product.category}</Badge>
+                    {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
                   </div>
-
-                  {/* Right: price + buy */}
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <span className="font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(product.priceSol).toFixed(3)}</span>
-                    <Button
-                      type="button"
-                      variant="violet"
-                      size="sm"
-                      onClick={() => void preparePurchase(product)}
-                      disabled={busyProductId === product.productIdHex || !canPurchase}
-                      loading={busyProductId === product.productIdHex}
-                    >
-                      {busyProductId === product.productIdHex ? "..." : "Buy"}
-                    </Button>
+                  <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
+                  <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
+                    <span>{formatBytes(product.fileSizeBytes)}</span>
+                    <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
+                    <span>×{product.policy.maxAccessCount}</span>
                   </div>
                 </div>
-              );
-            })
-          )}
-        </div>
+                {/* Price + buy */}
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(product.priceSol).toFixed(3)}</span>
+                  <Button
+                    type="button"
+                    variant="violet"
+                    size="sm"
+                    onClick={() => void preparePurchase(product)}
+                    disabled={isBusy || !canPurchase || !connectedWallet}
+                    loading={isBusy}
+                  >
+                    {!connectedWallet ? "No wallet" : isBusy ? "..." : "Buy »"}
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
+
+      {!connectedWallet ? (
+        <p className="text-center text-[11px] text-[color:var(--text3)]">Connect your wallet from the sidebar to purchase.</p>
+      ) : null}
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
     </div>

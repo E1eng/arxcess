@@ -616,9 +616,11 @@ export function SellerWorkbench() {
             </div>
             <div className="p-4">
               {/* File area */}
-              <div className="relative mb-3 flex min-h-[100px] items-center justify-center border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)]">
+              <div className="relative mb-3 flex min-h-[160px] items-center justify-center overflow-hidden border border-dashed border-[color:var(--border2)] bg-[color:var(--bg2)] sm:min-h-[220px]">
                 {previewMode === "image" && filePreviewUrl ? (
-                  <Image className="object-cover" src={filePreviewUrl} alt={file?.name ?? "preview"} fill unoptimized />
+                  <div className="relative h-full min-h-[160px] w-full sm:min-h-[220px]">
+                    <Image className="object-contain p-3" src={filePreviewUrl} alt={file?.name ?? "preview"} fill unoptimized />
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-1.5 py-3">
                     <Badge variant={file ? "violet" : "gray"}>{file ? (file.type?.split("/")[0] ?? "file") : "no file"}</Badge>

@@ -55,6 +55,14 @@ function resolveCiphertextHashHex(product: { ciphertextHashHex: string }, onchai
   return onchainProduct?.ciphertextHashHex || product.ciphertextHashHex;
 }
 
+const CATEGORY_ICONS: Record<string, string> = {
+  ebook: "◫",
+  code: "<>",
+  image: "▣",
+  template: "◧",
+  dataset: "#"
+};
+
 function randomBigInt(byteLength: number) {
   const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
   let value = 0n;
@@ -666,7 +674,7 @@ export function PurchasesList() {
             </p>
           </div>
           <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--text3)]">
-            Use the Connect Wallet button in the sidebar →
+            Use the Connect Wallet button in the top bar ↑
           </p>
         </div>
       </div>
@@ -679,13 +687,14 @@ export function PurchasesList() {
       {/* ── Page header ──────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)] font-mono text-[12px] text-[#9B8FFF]">▤</div>
           <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Library</h1>
           <WalletAddress address={connectedWallet} shortened />
         </div>
       </div>
 
       {/* ── Stats bar ────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+      <div className="grid grid-cols-1 gap-px border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-3">
         {[
           { label: "Total assets", value: String(purchaseCards.length) },
           { label: "Total spent",  value: `◎ ${totalSpentSol.toFixed(3)}` },
@@ -753,28 +762,41 @@ export function PurchasesList() {
             const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
             const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
             const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting";
-            const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : "gray";
+            const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : effectiveStatus === "pending_arcium" ? "violet" : "amber";
             const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
             const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
             const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
             const isBusy = busyPurchaseId === purchase.purchaseIdHex;
+            const statusHint = effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
+              ? "Ready to reveal and download."
+              : effectiveStatus === "pending_arcium"
+                ? "Seller queued Arcium delivery."
+                : effectiveStatus === "revoked"
+                  ? "Access revoked by publisher."
+                  : "Waiting for seller delivery.";
 
             return (
               <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
-                <div className="flex items-start gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-                      {product?.category ? <Badge variant="gray">{product.category}</Badge> : null}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                  <div className="flex min-w-0 flex-1 gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[12px] text-[#9B8FFF]">
+                      {product?.category ? (CATEGORY_ICONS[product.category] ?? "•") : "•"}
                     </div>
-                    <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
-                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
-                      <span>◎ {Number(purchase.amountSol).toFixed(3)}</span>
-                      <span>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`} reveals</span>
-                      <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                        <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+                        {product?.category ? <Badge variant="gray">{product.category}</Badge> : null}
+                      </div>
+                      <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
+                      <p className="mt-1 text-[11px] text-[color:var(--text3)]">{statusHint}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
+                        <span>◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                        <span>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`} reveals</span>
+                        <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
+                      </div>
                     </div>
                   </div>
-                  <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                  <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF] sm:min-w-[92px] sm:text-right">◎ {Number(purchase.amountSol).toFixed(3)}</span>
                 </div>
 
                 {canReveal || canFinalize || canRevoke ? (

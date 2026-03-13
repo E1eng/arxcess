@@ -18,6 +18,14 @@ import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
 const CATEGORIES = ["ebook", "code", "image", "template", "dataset"] as const;
 type SortKey = "default" | "price_asc" | "price_desc";
 
+const CATEGORY_ICONS: Record<(typeof CATEGORIES)[number], string> = {
+  ebook: "◫",
+  code: "<>",
+  image: "▣",
+  template: "◧",
+  dataset: "#"
+};
+
 export function ProductCatalog() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
@@ -225,6 +233,7 @@ export function ProductCatalog() {
       {/* ── Page header ──────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)] font-mono text-[12px] text-[#9B8FFF]">◎</div>
           <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Explore</h1>
           <span className="border border-[color:var(--border2)] px-2 py-0.5 font-mono text-[10px] text-[color:var(--text2)]">
             {filteredProducts.length}/{visibleProducts.length}
@@ -335,25 +344,33 @@ export function ProductCatalog() {
             const onchain = onchainProductStates[product.productIdHex];
             const canPurchase = canPurchaseProduct(product, onchain);
             const isBusy = busyProductId === product.productIdHex;
+            const statusCopy = resolveProductStatusCopy(product, onchain);
 
             return (
-              <div key={product.productIdHex} className="flex items-center gap-4 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
+              <div key={product.productIdHex} className="flex flex-col gap-4 bg-[color:var(--surface)] px-4 py-4 transition-colors hover:bg-[color:var(--surface2)] sm:flex-row sm:items-start sm:px-5">
                 {/* Info */}
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="gray">{product.category}</Badge>
-                    {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                <div className="flex min-w-0 flex-1 gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[12px] text-[#9B8FFF]">
+                    {CATEGORY_ICONS[product.category as keyof typeof CATEGORY_ICONS] ?? "•"}
                   </div>
-                  <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
-                  <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
-                    <span>{formatBytes(product.fileSizeBytes)}</span>
-                    <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
-                    <span>×{product.policy.maxAccessCount}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge variant={canPurchase ? "green" : "gray"}>{statusCopy.badge}</Badge>
+                      <Badge variant="gray">{product.category}</Badge>
+                      {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                    </div>
+                    <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
+                    <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
+                    <p className="mt-1 text-[11px] text-[color:var(--text3)]">{statusCopy.subtitle}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
+                      <span>{formatBytes(product.fileSizeBytes)}</span>
+                      <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
+                      <span>×{product.policy.maxAccessCount}</span>
+                    </div>
                   </div>
                 </div>
                 {/* Price + buy */}
-                <div className="flex shrink-0 flex-col items-end gap-2">
+                <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:min-w-[116px] sm:flex-col sm:items-end">
                   <span className="font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(product.priceSol).toFixed(3)}</span>
                   <Button
                     type="button"
@@ -373,7 +390,7 @@ export function ProductCatalog() {
       </div>
 
       {!connectedWallet ? (
-        <p className="text-center text-[11px] text-[color:var(--text3)]">Connect your wallet from the sidebar to purchase.</p>
+        <p className="text-center text-[11px] text-[color:var(--text3)]">Connect your wallet from the top bar to purchase.</p>
       ) : null}
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />

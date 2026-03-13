@@ -7,10 +7,10 @@ import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePurchases } from "@/hooks/use-purchases";
-import { cn, shortenAddress } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
+  () => import("@solana/wallet-adapter-react-ui").then((module) => module.WalletMultiButton),
   { ssr: false }
 );
 
@@ -33,20 +33,23 @@ export function Sidebar() {
   }, [purchases, address]);
 
   return (
-    <aside className="flex h-full w-[200px] shrink-0 flex-col border-r border-[color:var(--border)] bg-black">
-
-      {/* Logo */}
-      <div className="flex items-center gap-2 border-b border-[color:var(--border)] px-4 py-4">
-        <svg width="16" height="16" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-          <polygon points="11,2 20,19 2,19" fill="#6B50FF" />
-        </svg>
-        <span className="font-head text-[13px] font-bold uppercase tracking-[0.1em] text-white">
-          Arxcess
-        </span>
+    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-[color:var(--border)] bg-black">
+      <div className="border-b border-[color:var(--border)] px-4 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+              <polygon points="11,2 20,19 2,19" fill="#6B50FF" />
+            </svg>
+            <span className="font-head text-[13px] font-bold uppercase tracking-[0.08em] text-white">Arxcess</span>
+          </div>
+          <span className="border border-[color:var(--border2)] px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-[color:var(--text2)]">
+            Devnet
+          </span>
+        </div>
       </div>
 
       {/* Nav links */}
-      <nav className="flex flex-1 flex-col gap-px pt-2 pb-2" aria-label="Sidebar">
+      <nav className="flex flex-1 flex-col gap-px px-2 py-3" aria-label="Sidebar">
         {navLinks.map((link) => {
           const active = link.href === "/"
             ? pathname === "/"
@@ -58,7 +61,7 @@ export function Sidebar() {
               key={link.href}
               href={link.href}
               className={cn(
-                "group mx-2 flex items-center justify-between gap-2.5 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.1em] transition-colors",
+                "group flex items-center justify-between gap-2.5 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.1em] transition-colors",
                 active
                   ? "bg-[#6B50FF] text-white"
                   : "text-[color:var(--text2)] hover:bg-[color:var(--surface)] hover:text-white"
@@ -88,21 +91,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Divider */}
-      <div className="border-t border-[color:var(--border)]" />
-
-      {/* Wallet section */}
-      <div className="flex flex-col gap-2 px-3 py-4">
-        {address ? (
-          <div className="px-1">
-            <span className="block truncate font-mono text-[10px] text-[color:var(--text2)]">
-              {shortenAddress(address)}
-            </span>
-          </div>
-        ) : (
-          <p className="px-1 text-[10px] text-[color:var(--text2)]">No wallet connected</p>
-        )}
-        <div className="wallet-button-shell w-full [&>button]:w-full [&>button]:justify-center">
+      <div className="border-t border-[color:var(--border)] px-4 py-4">
+        <div className="wallet-button-shell w-full [&_.wallet-adapter-button-trigger]:w-full [&_.wallet-adapter-button-trigger]:justify-center [&_.wallet-adapter-button]:w-full [&_.wallet-adapter-button]:justify-center">
           <WalletMultiButton />
         </div>
       </div>

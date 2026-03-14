@@ -153,10 +153,11 @@ The landing page introduces the encrypted marketplace model and routes users int
 The launch workspace:
 
 - collects listing metadata
+- uses a media-focused taxonomy: `Image`, `Video / GIF`, or `Other`
 - encrypts the chosen file in the browser
 - uploads ciphertext to Pinata/IPFS
 - uploads metadata JSON
-- asks the wallet to sign a Devnet publish transaction that creates, deposits, and activates the product on-chain
+- asks the wallet to sign separate Devnet transactions for product creation, Arcium custody queueing, and later activation when the callback has settled
 - stores the resulting listing locally and optionally in Supabase
 - shows only essential listing terms such as price, access window, reveal limit, and revocable status
 
@@ -164,6 +165,7 @@ The launch workspace:
 
 The explore page reads stored listings and presents a minimal storefront. Buying sends the on-chain `purchase_product` transaction from the connected wallet.
 
+- focuses the storefront on `Image`, `Video / GIF`, and `Other` listing types
 - auto-generates or reuses the purchaser delivery key in-browser
 - stores purchase intents locally after checkout succeeds
 - highlights only essential public listing details such as publisher, price, access window, reveal limit, and revocable status
@@ -200,7 +202,7 @@ Every Arcium computation leaves verifiable on-chain state. You can independently
 
 ### Method 1 — Solana Explorer (browser)
 
-After publishing a listing or finalizing delivery, the UI shows a **Custody tx** and **Delivery tx** link in the Arcium proof panel. Click any link to open the transaction on [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet). Look for:
+After publishing a listing or finalizing delivery, the UI shows the Arcium **Queue tx** and **Delivery tx** in the proof panel. The custody settlement itself is asynchronous, so if Arcium has not called back yet you may see a pending settlement status without a separate callback signature. Click any available link to open the transaction on [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet). Look for:
 
 - CPI calls to the Arcium program (`arcMXE...` program ID) inside the transaction.
 - Anchor events emitted: `ArciumProductKeyComputationRequested`, `ArciumProductKeySettled`, `ArciumDeliverySettled`.

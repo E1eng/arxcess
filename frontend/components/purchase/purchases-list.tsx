@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnchorProvider } from "@coral-xyz/anchor";
+import Image from "next/image";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { type ProductMetadata } from "@arxcess/sdk";
 import { PublicKey } from "@solana/web3.js";
+import { CategoryIcon } from "@/components/marketplace/category-icon";
 import { createArciumDeliveryCommitmentHex, getArciumFrontendBlockMessage, getArciumMxePublicKey, isArciumFrontendRuntimeReady, revealArciumDeliveryMaterial, revealArciumDeliveryMaterialWithNonce } from "@/lib/arcium/client";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +20,7 @@ import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { useProducts } from "@/hooks/use-products";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { usePurchases } from "@/hooks/use-purchases";
+import { CATEGORY_LABELS, normalizeMarketplaceCategory } from "@/lib/marketplace/categories";
 import { fetchOnchainProductStates, fetchOnchainPurchaseStates, type DecodedProductState, type DecodedPurchaseState } from "@/lib/solana/account-state";
 import { buildConsumeAccessTransaction, buildRequestEvaluateAndSealTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
 import { getStoredPurchase, saveStoredPurchase } from "@/lib/storage/marketplace";
@@ -54,14 +57,6 @@ function resolveCiphertextUrl(
 function resolveCiphertextHashHex(product: { ciphertextHashHex: string }, onchainProduct: DecodedProductState | undefined) {
   return onchainProduct?.ciphertextHashHex || product.ciphertextHashHex;
 }
-
-const CATEGORY_ICONS: Record<string, string> = {
-  ebook: "E",
-  code: "{ }",
-  image: "IMG",
-  template: "TPL",
-  dataset: "DS"
-};
 
 function randomBigInt(byteLength: number) {
   const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
@@ -142,6 +137,22 @@ async function resolveVerifiedDeliveryMaterial(args: {
   throw new Error("Arcium delivery content key does not match the on-chain product key commitment.");
 }
 
+interface RevealedAsset {
+  downloadName: string;
+  mimeType: string;
+  objectUrl: string;
+}
+
+function downloadRevealedAsset(asset: RevealedAsset) {
+  const link = document.createElement("a");
+
+  link.href = asset.objectUrl;
+  link.download = asset.downloadName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 type StatusFilter = "all" | "waiting" | "delivered" | "revoked";
 
 export function PurchasesList() {
@@ -157,7 +168,7 @@ export function PurchasesList() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
-  const [revealedPurchaseId, setRevealedPurchaseId] = useState<string | null>(null);
+  const [revealedAssets, setRevealedAssets] = useState<Record<string, RevealedAsset>>({});
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   // Filter purchases by connected wallet only
@@ -596,24 +607,32 @@ export function PurchasesList() {
         label: "Consume access"
       });
 
-      stage = "download";
       const blob = new Blob([toArrayBuffer(plaintext)], { type: product.mimeType });
       const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      const downloadName = `${product.title.replace(/\s+/g, "-").toLowerCase()}`;
 
-      link.href = objectUrl;
-      link.download = `${product.title.replace(/\s+/g, "-").toLowerCase()}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
+      setRevealedAssets((current) => {
+        const existing = current[purchaseIdHex];
+
+        if (existing) {
+          URL.revokeObjectURL(existing.objectUrl);
+        }
+
+        return {
+          ...current,
+          [purchaseIdHex]: {
+            downloadName,
+            mimeType: product.mimeType,
+            objectUrl
+          }
+        };
+      });
       saveStoredPurchase({
         ...purchase,
         accessCount: purchase.accessCount + 1
       });
       refreshPurchases();
-      setRevealedPurchaseId(purchaseIdHex);
-      setStatusMessage("Asset decrypted successfully. Secure download started automatically.");
+      setStatusMessage("Asset decrypted successfully. Preview is ready below.");
       return;
     } catch (cause) {
       setStatusMessage(null);
@@ -628,7 +647,7 @@ export function PurchasesList() {
         setError("Reveal blocked because the Arcium-delivered content key no longer matches the product key that was published on-chain.");
       } else if (message.includes("Consume access failed on-chain")) {
         setError(`Reveal decrypted successfully, but consume access failed on-chain. ${message}`);
-      } else if (stage === "wallet_approval" || stage === "confirm_consume_access" || stage === "download") {
+      } else if (stage === "wallet_approval" || stage === "confirm_consume_access") {
         setError(`Reveal decrypted successfully, but failed during ${stage}. ${message}`);
       } else if (
         message.includes("Failed to decrypt ciphertext") ||
@@ -774,10 +793,13 @@ export function PurchasesList() {
             const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
             const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
             const isBusy = busyPurchaseId === purchase.purchaseIdHex;
-            const publishProofLabel = onchainProduct?.arciumCustodyReady ? "Settled" : product?.publishSignature ? "Queued" : "Missing";
+            const normalizedCategory = normalizeMarketplaceCategory(product?.category ?? "other");
+            const hasStoredPublishQueueTx = Boolean(product?.publishSignature);
+            const revealedAsset = revealedAssets[purchase.purchaseIdHex];
+            const publishProofLabel = onchainProduct?.arciumCustodyReady ? "Settled" : product?.publishSignature ? "Awaiting callback" : "Not queued";
             const deliveryProofLabel = onchain?.arciumDeliveryReady ? "Settled" : purchase.finalizeSignature ? "Queued" : "Not sent";
             const statusHint = effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
-              ? "Ready to reveal and download."
+              ? "Ready to reveal from the frontend or download after preview." 
               : effectiveStatus === "pending_arcium"
                 ? "Seller queued Arcium delivery."
                 : effectiveStatus === "revoked"
@@ -788,13 +810,13 @@ export function PurchasesList() {
               <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                   <div className="flex min-w-0 flex-1 gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[9px] font-bold tracking-tight text-[#9B8FFF]">
-                      {product?.category ? (CATEGORY_ICONS[product.category] ?? "•") : "•"}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#2e254f] bg-[#151225] text-[#9B8FFF] shadow-[0_0_0_1px_rgba(107,80,255,0.08)]">
+                      <CategoryIcon category={normalizedCategory} className="h-4.5 w-4.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                         <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-                        {product?.category ? <Badge variant="gray">{product.category}</Badge> : null}
+                        {product?.category ? <Badge variant="gray">{CATEGORY_LABELS[normalizedCategory]}</Badge> : null}
                       </div>
                       <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
                       <p className="mt-1 text-[11px] text-[color:var(--text3)]">{statusHint}</p>
@@ -818,9 +840,9 @@ export function PurchasesList() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                          Custody tx
+                          Queue tx
                         </span>
-                        <Badge variant={publishProofLabel === "Settled" ? "green" : publishProofLabel === "Queued" ? "violet" : "gray"}>{publishProofLabel}</Badge>
+                        <Badge variant={publishProofLabel === "Settled" ? "green" : publishProofLabel === "Awaiting callback" ? "amber" : "gray"}>{publishProofLabel}</Badge>
                       </div>
                       {product?.publishSignature ? (
                         <a
@@ -832,9 +854,16 @@ export function PurchasesList() {
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                           {truncateValue(product.publishSignature, 10, 10)}
                         </a>
+                      ) : onchainProduct?.arciumCustodyReady ? (
+                        <span className="font-mono text-[11px] text-[color:var(--text2)]">Legacy listing / queue tx not stored</span>
                       ) : (
                         <span className="font-mono text-[11px] text-[color:var(--text3)]">&mdash;</span>
                       )}
+                      <span className="text-[11px] text-[color:var(--text3)]">
+                        {onchainProduct?.arciumCustodyReady && !hasStoredPublishQueueTx
+                          ? "This older listing is confirmed ready from on-chain state, but the original queue transaction signature was never saved in frontend storage."
+                          : "This row stores the queue transaction. Settlement is inferred later from on-chain callback readiness."}
+                      </span>
                     </div>
                     <div className="flex flex-col gap-2 p-3">
                       <div className="flex items-center justify-between gap-2">
@@ -870,7 +899,7 @@ export function PurchasesList() {
                     ) : null}
                     {canReveal ? (
                       <Button variant="violet" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
-                        {isBusy ? "Revealing..." : revealedPurchaseId === purchase.purchaseIdHex ? "Download again »" : "Reveal & download »"}
+                        {isBusy ? "Revealing..." : revealedAsset ? "Reveal again" : "Reveal"}
                       </Button>
                     ) : null}
                     {canRevoke ? (
@@ -878,6 +907,39 @@ export function PurchasesList() {
                         {isBusy ? "Revoking..." : "Revoke"}
                       </Button>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {revealedAsset ? (
+                  <div className="overflow-hidden rounded-[20px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.45)]">
+                    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border)] px-3 py-2">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#9B8FFF]">Revealed preview</p>
+                        <p className="mt-1 text-[11px] text-[color:var(--text2)]">Rendered locally from the decrypted frontend payload.</p>
+                      </div>
+                      <Button variant="secondary" size="sm" type="button" onClick={() => downloadRevealedAsset(revealedAsset)}>
+                        Download
+                      </Button>
+                    </div>
+                    {revealedAsset.mimeType.startsWith("image/") ? (
+                      <div className="bg-black/30 p-3">
+                        <div className="relative mx-auto h-[460px] w-full overflow-hidden rounded-[16px]">
+                          <Image src={revealedAsset.objectUrl} alt={product?.title ?? "Revealed asset"} fill unoptimized className="object-contain" />
+                        </div>
+                      </div>
+                    ) : revealedAsset.mimeType.startsWith("video/") ? (
+                      <div className="bg-black/30 p-3">
+                        <video src={revealedAsset.objectUrl} controls className="max-h-[460px] w-full rounded-[16px] bg-black object-contain" />
+                      </div>
+                    ) : revealedAsset.mimeType.startsWith("audio/") ? (
+                      <div className="p-4">
+                        <audio src={revealedAsset.objectUrl} controls className="w-full" />
+                      </div>
+                    ) : (
+                      <div className="p-4">
+                        <p className="text-[12px] text-[color:var(--text2)]">Preview is not available for this file type yet. Use Download to open the decrypted file.</p>
+                      </div>
+                    )}
                   </div>
                 ) : null}
               </div>

@@ -9,6 +9,7 @@ import { getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, prepareLis
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { CategoryIcon } from "@/components/marketplace/category-icon";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { NoticeToast } from "@/components/ui/notice-toast";
 import { WalletAddress } from "@/components/ui/WalletAddress";
@@ -17,6 +18,7 @@ import { encryptFile } from "@/lib/crypto/content";
 import { uploadCiphertextToPinata, uploadJsonToPinata } from "@/lib/ipfs/client";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
 import { createMarketplaceListing, hasSupabaseListingsPublicConfig } from "@/lib/marketplace/listings";
+import { CATEGORY_LABELS, normalizeMarketplaceCategory } from "@/lib/marketplace/categories";
 import { fetchOnchainProductStates } from "@/lib/solana/account-state";
 import { buildActivateProductTransaction, buildCreateProductTransaction, buildRequestDepositProductKeyTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
@@ -28,7 +30,7 @@ import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/f
 const initialForm = {
   title: "",
   description: "",
-  category: "ebook",
+  category: "image",
   priceSol: "0.10",
   licenseDurationDays: "30",
   maxAccessCount: "3",
@@ -80,6 +82,7 @@ export function SellerWorkbench() {
   const isArciumPublishBlocked = !isArciumFrontendRuntimeReady();
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
   const previewMode = useMemo(() => inferPreviewMode(file), [file]);
+  const normalizedCategory = normalizeMarketplaceCategory(form.category);
 
   const activateListing = useCallback(async (listing: LocalProductListing) => {
     if (!publicKey || !sendTransaction) {
@@ -543,7 +546,7 @@ export function SellerWorkbench() {
           <strong>Published!</strong>
           <span className="text-[color:var(--text2)]">
             {result.activationRequired
-              ? `${result.listing.title} — waiting for Arcium callback before activation.`
+              ? `${result.listing.title} — Arcium queued the custody request, but the callback has not settled yet.`
               : `${result.listing.title} is now live in Explore.`}
           </span>
           <div className="mt-3 overflow-hidden border border-[color:var(--border)]">
@@ -553,14 +556,14 @@ export function SellerWorkbench() {
                 Arcium proof
               </span>
               <Badge variant={result.activationRequired ? "amber" : "green"}>
-                {result.activationRequired ? "Callback pending" : "Settled"}
+                {result.activationRequired ? "Awaiting callback" : "Live"}
               </Badge>
             </div>
-            <div className="grid sm:grid-cols-2">
-              <div className="flex flex-col gap-2 border-b border-[color:var(--border)] p-3 sm:border-b-0 sm:border-r">
+            <div className="grid gap-px bg-[color:var(--border)] sm:grid-cols-3">
+              <div className="flex flex-col gap-2 bg-[color:var(--surface)] p-3">
                 <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
                   <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Custody tx
+                  Queue tx
                 </span>
                 <a
                   href={explorerTxUrl(result.publishSignature)}
@@ -571,8 +574,17 @@ export function SellerWorkbench() {
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   {truncateValue(result.publishSignature, 10, 10)}
                 </a>
+                <span className="text-[11px] text-[color:var(--text3)]">This transaction only queues confidential custody on Arcium.</span>
               </div>
-              <div className="flex flex-col gap-2 p-3">
+              <div className="flex flex-col gap-2 bg-[color:var(--surface)] p-3">
+                <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                  Custody settlement
+                </span>
+                <span className="font-mono text-[11px] text-white">{result.activationRequired ? "Waiting for Arcium callback" : "Settled on-chain"}</span>
+                <span className="text-[11px] text-[color:var(--text3)]">{result.activationRequired ? "No callback transaction has landed yet." : "The callback completed and the listing can be activated."}</span>
+              </div>
+              <div className="flex flex-col gap-2 bg-[color:var(--surface)] p-3">
                 <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
                   <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                   Activation tx
@@ -588,7 +600,7 @@ export function SellerWorkbench() {
                     {truncateValue(result.activationSignature, 10, 10)}
                   </a>
                 ) : (
-                  <span className="font-mono text-[11px] text-[color:var(--text3)]">{result.activationRequired ? "Waiting…" : "—"}</span>
+                  <span className="font-mono text-[11px] text-[color:var(--text3)]">{result.activationRequired ? "Not sent yet" : "—"}</span>
                 )}
               </div>
             </div>
@@ -611,11 +623,9 @@ export function SellerWorkbench() {
             <Textarea label="Description" name="description" required value={form.description} onChange={handleInputChange} placeholder="What does the buyer get after purchase?" />
             <div className="grid gap-4 sm:grid-cols-2">
               <Select label="Category" name="category" value={form.category} onChange={handleInputChange}>
-                <option value="ebook">eBook</option>
-                <option value="code">Code</option>
                 <option value="image">Image</option>
-                <option value="template">Template</option>
-                <option value="dataset">Dataset</option>
+                <option value="video_gif">Video / GIF</option>
+                <option value="other">Other</option>
               </Select>
               <Input label="Price (SOL)" name="priceSol" required inputMode="decimal" value={form.priceSol} onChange={handleInputChange} placeholder="0.10" suffix="SOL" />
             </div>
@@ -684,16 +694,26 @@ export function SellerWorkbench() {
               {/* Detail rows */}
               <div className="detail-list mt-3">
                 {[
+                  ["Category", CATEGORY_LABELS[normalizedCategory]],
                   ["Price", `◎ ${form.priceSol || "—"}`],
                   ["Access", formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)],
                   ["Reveals", `${form.maxAccessCount}×`],
                   ["Revocable", form.revocable ? "Yes" : "No"]
-                ].map(([k, v]) => (
-                  <div key={k} className="detail-row">
-                    <span className="text-[11px] text-[color:var(--text2)]">{k}</span>
-                    <strong className="text-[11px] text-white">{v}</strong>
+                ].map(([label, value]) => (
+                  <div key={label} className="detail-row">
+                    <span className="text-[11px] text-[color:var(--text2)]">{label}</span>
+                    <strong className="text-[11px] text-white">{value}</strong>
                   </div>
                 ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2 border border-[color:var(--border2)] bg-black/40 px-3 py-2 text-[#9B8FFF]">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#2e254f] bg-[#151225]">
+                  <CategoryIcon category={normalizedCategory} className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white">{CATEGORY_LABELS[normalizedCategory]}</p>
+                  <p className="text-[11px] text-[color:var(--text3)]">Focused media taxonomy for the storefront.</p>
+                </div>
               </div>
             </div>
           </div>

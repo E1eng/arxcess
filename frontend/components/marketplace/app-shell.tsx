@@ -1,7 +1,5 @@
 "use client";
 
-import type { Route } from "next";
-import Link from "next/link";
 import { PropsWithChildren } from "react";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
@@ -38,11 +36,17 @@ export function AppShell({ children }: AppShellProps) {
                   <span className="font-head text-[11px] font-bold uppercase tracking-[0.08em] text-white">Arxcess</span>
                   <span className="text-[color:var(--text3)]">Encrypted marketplace on Solana</span>
                 </div>
-                <div className="flex flex-wrap gap-4 text-[color:var(--text3)]">
-                  <Link href={"/explore" as Route}>Explore</Link>
-                  <Link href={"/launch" as Route}>Launch</Link>
-                  <Link href={"/library" as Route}>Library</Link>
-                </div>
+                <a
+                  href="https://twitter.com/arxcess"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 text-[color:var(--text3)] transition-colors hover:text-white"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.738-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63Zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Twitter
+                </a>
               </div>
             </footer>
           </div>

@@ -1,19 +1,23 @@
 # Arxcess
 
-Arxcess is a monorepo for a web-first encrypted digital goods marketplace prototype built around Solana, Anchor, and a browser-based encryption flow.
+Arxcess is a monorepo for a web-first encrypted digital goods marketplace built on Solana + Arcium. Sellers publish encrypted content with confidential key custody handled by Arcium's MXE network; buyers pay on-chain and receive content only after Arcium computes and delivers a buyer-specific decryption payload.
 
-The current prototype focuses on a simple public product structure:
+The platform exposes four surfaces:
 
-- `Home` explains the product and directs people to the right workflow.
-- `Explore` lists encrypted products that can be purchased from a connected wallet.
-- `Launch` lets creators publish locked products from the browser.
-- `Library` holds purchased items and exposes role-aware delivery actions.
+- `Home` — landing page that routes users into the correct workflow.
+- `Explore` — searchable, filterable storefront of active listings.
+- `Launch` — seller workspace: encrypt file in-browser, upload to IPFS, publish on-chain with Arcium custody.
+- `Library` — wallet-gated hub: finalize delivery (seller), reveal and download (buyer), or revoke access.
 
-At a system level, the prototype currently demonstrates these core journeys:
+Core flow:
 
-- Creators encrypt files in the browser before upload.
-- Encrypted assets and metadata are stored through Pinata/IPFS.
-- Purchasers buy on Solana and receive decryption access only after delivery is finalized.
+1. Seller encrypts file locally and uploads ciphertext to Pinata/IPFS.
+2. Seller calls `create_product` + `request_deposit_product_key` on Solana — this queues an Arcium computation that wraps the content key under Arcium's MXE public key.
+3. Arcium callback sets `arcium_custody_ready = true` on the `ProductState` account.
+4. Buyer calls `purchase_product` on-chain.
+5. Seller calls `request_evaluate_and_seal` — this queues an Arcium computation that re-encrypts the content key under the buyer's delivery public key.
+6. Arcium callback writes the encrypted payload into `PurchaseState` and sets `arcium_delivery_ready = true`.
+7. Buyer reads the on-chain payload, decrypts locally, and downloads the original file.
 
 ## Repository structure
 
@@ -31,13 +35,12 @@ At a system level, the prototype currently demonstrates these core journeys:
 
 ## Tech stack
 
-- Next.js 14
-- React 18
-- TypeScript
-- Solana wallet adapter
-- Anchor
-- Rust workspace for contracts and supporting crates
-- Pinata/IPFS for encrypted asset storage
+- Next.js 14 + React 18 + TypeScript
+- Solana wallet adapter + Anchor (Devnet)
+- Arcium MXE — confidential key custody and buyer-specific delivery
+- Pinata/IPFS — encrypted ciphertext and metadata storage
+- Supabase — optional shared listing sync across browsers
+- Rust workspace for Anchor program and encrypted-instruction helpers
 
 ## Prerequisites
 
@@ -191,12 +194,63 @@ anchor test
 
 Make sure your Solana and Anchor toolchains are installed and configured first.
 
+## Verifying Arcium integration on-chain
+
+Every Arcium computation leaves verifiable on-chain state. You can independently confirm that Arcium is doing real confidential work using the Solana CLI or a script.
+
+### Method 1 — Solana Explorer (browser)
+
+After publishing a listing or finalizing delivery, the UI shows a **Custody tx** and **Delivery tx** link in the Arcium proof panel. Click any link to open the transaction on [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet). Look for:
+
+- CPI calls to the Arcium program (`arcMXE...` program ID) inside the transaction.
+- Anchor events emitted: `ArciumProductKeyComputationRequested`, `ArciumProductKeySettled`, `ArciumDeliverySettled`.
+
+### Method 2 — Terminal: read on-chain account state
+
+```bash
+# Substitute your program ID and product/purchase account pubkeys
+solana account <PRODUCT_STATE_PUBKEY> --url devnet --output json | \
+  node -e "
+const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+const buf = Buffer.from(d.account.data[0], 'base64');
+// arcium_custody_ready is a bool stored at a known offset in ProductState
+// Check contracts/programs/arxcess/src/state/product_state.rs for layout
+console.log('raw data hex:', buf.toString('hex').slice(0, 120));
+"
+```
+
+### Method 3 — Smoke test script
+
+The repo ships `scripts/smoke-arcium-flow.mjs` which exercises the full end-to-end Arcium flow from the command line, prints every transaction signature, and cryptographically verifies the delivery commitment:
+
+```bash
+node scripts/smoke-arcium-flow.mjs
+```
+
+The script:
+1. Creates a product and calls `request_deposit_product_key` → prints `custody_tx`.
+2. Polls until `arcium_custody_ready = true` on the `ProductState` account.
+3. Creates a purchase and calls `request_evaluate_and_seal` → prints `delivery_tx`.
+4. Polls until `arcium_delivery_ready = true` on the `PurchaseState` account.
+5. Reads `arcium_delivery_encryption_key` + ciphertexts from on-chain state, decrypts, and asserts the commitment hash matches the original content hash.
+
+A passing run is cryptographic proof that Arcium performed real confidential computation — no hardcoded shortcuts could produce a matching commitment hash.
+
+### Method 4 — Fetch Arcium computation account directly
+
+```bash
+# arcium_deposit_computation_offset is stored in ProductState once queued
+# Use it to derive and fetch the MXEComputationAccount on-chain
+solana account <COMPUTATION_ACCOUNT_PUBKEY> --url devnet --output json
+```
+
+A non-empty `MXEComputationAccount` with a matching `computation_id` proves the Arcium MXE node accepted and processed the job.
+
 ## Development notes
 
-- The frontend is the fastest place to iterate on UX and flow validation.
-- The app currently relies on browser-local state for listings, purchases, and delivery keys, with optional shared listing sync through Supabase.
-- The purchaser delivery key is auto-generated in-browser when needed, so checkout does not require a separate manual setup step.
-- On-chain enforcement and Arcium-oriented delivery are represented as prototype-ready payload preparation, not a fully deployed production flow yet.
+- Frontend state is browser-local for listings, purchases, and delivery keys, with optional Supabase sync for shared listings.
+- The purchaser delivery keypair is auto-generated in-browser at checkout — no manual setup needed.
+- Arcium confidential computation is live on Devnet; every publish and delivery goes through real MXE nodes.
 
 ## Git hygiene
 

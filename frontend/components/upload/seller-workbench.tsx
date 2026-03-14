@@ -23,7 +23,7 @@ import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
 import { type LocalProductListing, saveStoredProduct } from "@/lib/storage/marketplace";
-import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
+import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
 
 const initialForm = {
   title: "",
@@ -49,6 +49,10 @@ function inferPreviewMode(file: File | null) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function explorerTxUrl(signature: string) {
+  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
 export function SellerWorkbench() {
@@ -542,6 +546,53 @@ export function SellerWorkbench() {
               ? `${result.listing.title} — waiting for Arcium callback before activation.`
               : `${result.listing.title} is now live in Explore.`}
           </span>
+          <div className="mt-3 overflow-hidden border border-[color:var(--border)]">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] bg-[#0d0d14] px-3 py-2">
+              <span className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#9B8FFF]">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B50FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Arcium proof
+              </span>
+              <Badge variant={result.activationRequired ? "amber" : "green"}>
+                {result.activationRequired ? "Callback pending" : "Settled"}
+              </Badge>
+            </div>
+            <div className="grid sm:grid-cols-2">
+              <div className="flex flex-col gap-2 border-b border-[color:var(--border)] p-3 sm:border-b-0 sm:border-r">
+                <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Custody tx
+                </span>
+                <a
+                  href={explorerTxUrl(result.publishSignature)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 font-mono text-[11px] text-[#9B8FFF] underline-offset-2 hover:underline"
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  {truncateValue(result.publishSignature, 10, 10)}
+                </a>
+              </div>
+              <div className="flex flex-col gap-2 p-3">
+                <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  Activation tx
+                </span>
+                {result.activationSignature ? (
+                  <a
+                    href={explorerTxUrl(result.activationSignature)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 font-mono text-[11px] text-[#9B8FFF] underline-offset-2 hover:underline"
+                  >
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    {truncateValue(result.activationSignature, 10, 10)}
+                  </a>
+                ) : (
+                  <span className="font-mono text-[11px] text-[color:var(--text3)]">{result.activationRequired ? "Waiting…" : "—"}</span>
+                )}
+              </div>
+            </div>
+          </div>
           {result.activationRequired ? (
             <Button type="button" size="sm" variant="secondary" onClick={() => void handleActivateResultListing()} disabled={activatingResult} loading={activatingResult}>
               {activatingResult ? "Activating..." : "Activate listing"}

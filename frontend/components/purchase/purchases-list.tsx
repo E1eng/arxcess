@@ -56,11 +56,11 @@ function resolveCiphertextHashHex(product: { ciphertextHashHex: string }, onchai
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
-  ebook: "◫",
-  code: "<>",
-  image: "▣",
-  template: "◧",
-  dataset: "#"
+  ebook: "E",
+  code: "{ }",
+  image: "IMG",
+  template: "TPL",
+  dataset: "DS"
 };
 
 function randomBigInt(byteLength: number) {
@@ -72,6 +72,10 @@ function randomBigInt(byteLength: number) {
   }
 
   return value;
+}
+
+function explorerTxUrl(signature: string) {
+  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
 async function deriveListingKeyCommitmentHex(args: {
@@ -687,7 +691,9 @@ export function PurchasesList() {
       {/* ── Page header ──────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)] font-mono text-[12px] text-[#9B8FFF]">▤</div>
+          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B50FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
           <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Library</h1>
           <WalletAddress address={connectedWallet} shortened />
         </div>
@@ -697,7 +703,7 @@ export function PurchasesList() {
       <div className="grid grid-cols-1 gap-px border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-3">
         {[
           { label: "Total assets", value: String(purchaseCards.length) },
-          { label: "Total spent",  value: `◎ ${totalSpentSol.toFixed(3)}` },
+          { label: "Total spent",  value: `${totalSpentSol.toFixed(3)} SOL` },
           { label: "Delivered",    value: String(deliveredCount) }
         ].map(({ label, value }) => (
           <div key={label} className="flex flex-col gap-0.5 bg-[color:var(--surface)] px-4 py-3">
@@ -758,15 +764,18 @@ export function PurchasesList() {
         ) : (
           filteredCards.map(({ purchase, product }) => {
             const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
+            const onchainProduct = product ? onchainProductStates[product.productIdHex] : undefined;
             const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
             const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
             const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
-            const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Arcium queued" : "Waiting";
+            const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Queued" : "Waiting";
             const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : effectiveStatus === "pending_arcium" ? "violet" : "amber";
             const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
             const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
             const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
             const isBusy = busyPurchaseId === purchase.purchaseIdHex;
+            const publishProofLabel = onchainProduct?.arciumCustodyReady ? "Settled" : product?.publishSignature ? "Queued" : "Missing";
+            const deliveryProofLabel = onchain?.arciumDeliveryReady ? "Settled" : purchase.finalizeSignature ? "Queued" : "Not sent";
             const statusHint = effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
               ? "Ready to reveal and download."
               : effectiveStatus === "pending_arcium"
@@ -779,7 +788,7 @@ export function PurchasesList() {
               <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-4 transition-colors hover:bg-[color:var(--surface2)]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                   <div className="flex min-w-0 flex-1 gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[12px] text-[#9B8FFF]">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[9px] font-bold tracking-tight text-[#9B8FFF]">
                       {product?.category ? (CATEGORY_ICONS[product.category] ?? "•") : "•"}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -790,13 +799,66 @@ export function PurchasesList() {
                       <h3 className="truncate font-head text-sm font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
                       <p className="mt-1 text-[11px] text-[color:var(--text3)]">{statusHint}</p>
                       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
-                        <span>◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                        <span>{Number(purchase.amountSol).toFixed(3)} SOL</span>
                         <span>{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`} reveals</span>
                         <span>Expires: {formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</span>
                       </div>
                     </div>
                   </div>
-                  <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF] sm:min-w-[92px] sm:text-right">◎ {Number(purchase.amountSol).toFixed(3)}</span>
+                  <span className="shrink-0 font-mono text-sm font-bold text-[#9B8FFF] sm:min-w-[92px] sm:text-right">{Number(purchase.amountSol).toFixed(3)} SOL</span>
+                </div>
+
+                <div className="mt-1 overflow-hidden rounded-none border border-[color:var(--border)]">
+                  <div className="flex items-center gap-2 border-b border-[color:var(--border)] bg-[#0d0d14] px-3 py-2">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B50FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9B8FFF]">Arcium proof</span>
+                  </div>
+                  <div className="grid sm:grid-cols-2">
+                    <div className="flex flex-col gap-2 border-b border-[color:var(--border)] p-3 sm:border-b-0 sm:border-r">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          Custody tx
+                        </span>
+                        <Badge variant={publishProofLabel === "Settled" ? "green" : publishProofLabel === "Queued" ? "violet" : "gray"}>{publishProofLabel}</Badge>
+                      </div>
+                      {product?.publishSignature ? (
+                        <a
+                          href={explorerTxUrl(product.publishSignature)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 font-mono text-[11px] text-[#9B8FFF] underline-offset-2 hover:underline"
+                        >
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          {truncateValue(product.publishSignature, 10, 10)}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[color:var(--text3)]">&mdash;</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                          Delivery tx
+                        </span>
+                        <Badge variant={deliveryProofLabel === "Settled" ? "green" : deliveryProofLabel === "Queued" ? "violet" : "gray"}>{deliveryProofLabel}</Badge>
+                      </div>
+                      {purchase.finalizeSignature ? (
+                        <a
+                          href={explorerTxUrl(purchase.finalizeSignature)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 font-mono text-[11px] text-[#9B8FFF] underline-offset-2 hover:underline"
+                        >
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          {truncateValue(purchase.finalizeSignature, 10, 10)}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[color:var(--text3)]">&mdash;</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {canReveal || canFinalize || canRevoke ? (

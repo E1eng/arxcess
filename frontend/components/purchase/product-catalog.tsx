@@ -19,11 +19,11 @@ const CATEGORIES = ["ebook", "code", "image", "template", "dataset"] as const;
 type SortKey = "default" | "price_asc" | "price_desc";
 
 const CATEGORY_ICONS: Record<(typeof CATEGORIES)[number], string> = {
-  ebook: "◫",
-  code: "<>",
-  image: "▣",
-  template: "◧",
-  dataset: "#"
+  ebook: "E",
+  code: "{ }",
+  image: "IMG",
+  template: "TPL",
+  dataset: "DS"
 };
 
 export function ProductCatalog() {
@@ -233,7 +233,9 @@ export function ProductCatalog() {
       {/* ── Page header ──────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)] font-mono text-[12px] text-[#9B8FFF]">◎</div>
+          <div className="flex h-8 w-8 items-center justify-center border border-[color:var(--border2)] bg-[color:var(--surface)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B50FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
           <h1 className="font-head text-[16px] font-bold uppercase tracking-[0.08em] text-white">Explore</h1>
           <span className="border border-[color:var(--border2)] px-2 py-0.5 font-mono text-[10px] text-[color:var(--text2)]">
             {filteredProducts.length}/{visibleProducts.length}
@@ -253,21 +255,22 @@ export function ProductCatalog() {
 
       {/* ── Search bar ───────────────────────────────────────── */}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[color:var(--text3)]">⌕</span>
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color: 'var(--text3)'}} aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input
           type="text"
-          placeholder="Search products..."
+          placeholder="Search listings..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full border border-[color:var(--border)] bg-[color:var(--surface)] py-2 pl-8 pr-4 text-[12px] text-white placeholder:text-[color:var(--text3)] focus:border-[#6B50FF] focus:outline-none"
+          className="w-full border border-[color:var(--border)] bg-[color:var(--surface)] py-2 pl-8 pr-8 text-[12px] text-white placeholder:text-[color:var(--text3)] focus:border-[#6B50FF] focus:outline-none"
         />
         {search ? (
           <button
             type="button"
             onClick={() => setSearch("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[11px] text-[color:var(--text3)] hover:text-white"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--text3)] hover:text-white"
+            aria-label="Clear search"
           >
-            ✕
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         ) : null}
       </div>
@@ -347,41 +350,56 @@ export function ProductCatalog() {
             const statusCopy = resolveProductStatusCopy(product, onchain);
 
             return (
-              <div key={product.productIdHex} className="flex flex-col gap-4 bg-[color:var(--surface)] px-4 py-4 transition-colors hover:bg-[color:var(--surface2)] sm:flex-row sm:items-start sm:px-5">
-                {/* Info */}
-                <div className="flex min-w-0 flex-1 gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[12px] text-[#9B8FFF]">
-                    {CATEGORY_ICONS[product.category as keyof typeof CATEGORY_ICONS] ?? "•"}
+              <div key={product.productIdHex} className="flex flex-col gap-0 bg-[color:var(--surface)] transition-colors hover:bg-[color:var(--surface2)]">
+                <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:px-5">
+                  {/* Info */}
+                  <div className="flex min-w-0 flex-1 gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[color:var(--border2)] bg-black font-mono text-[9px] font-bold tracking-tight text-[#9B8FFF]">
+                      {CATEGORY_ICONS[product.category as keyof typeof CATEGORY_ICONS] ?? "•"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                        <Badge variant={canPurchase ? "green" : "gray"}>{statusCopy.badge}</Badge>
+                        <Badge variant="gray">{product.category}</Badge>
+                        {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                      </div>
+                      <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
+                      <p className="mt-0.5 line-clamp-2 text-[11px] text-[color:var(--text2)]">{product.description}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant={canPurchase ? "green" : "gray"}>{statusCopy.badge}</Badge>
-                      <Badge variant="gray">{product.category}</Badge>
-                      {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                  {/* Price + buy */}
+                  <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:min-w-[120px] sm:flex-col sm:items-end">
+                    <div className="text-right">
+                      <span className="font-mono text-base font-bold text-white">{Number(product.priceSol).toFixed(3)}</span>
+                      <span className="ml-1 font-mono text-[11px] text-[color:var(--text3)]">SOL</span>
                     </div>
-                    <h3 className="truncate font-head text-sm font-bold text-white">{product.title}</h3>
-                    <p className="mt-0.5 truncate text-[11px] text-[color:var(--text2)]">{product.description}</p>
-                    <p className="mt-1 text-[11px] text-[color:var(--text3)]">{statusCopy.subtitle}</p>
-                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-[color:var(--text2)]">
-                      <span>{formatBytes(product.fileSizeBytes)}</span>
-                      <span>{formatLicenseDuration(product.policy.licenseDurationSeconds)}</span>
-                      <span>×{product.policy.maxAccessCount}</span>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="violet"
+                      size="sm"
+                      onClick={() => void preparePurchase(product)}
+                      disabled={isBusy || !canPurchase || !connectedWallet}
+                      loading={isBusy}
+                    >
+                      {!connectedWallet ? "Connect wallet" : isBusy ? "Buying..." : "Buy"}
+                    </Button>
                   </div>
                 </div>
-                {/* Price + buy */}
-                <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:min-w-[116px] sm:flex-col sm:items-end">
-                  <span className="font-mono text-sm font-bold text-[#9B8FFF]">◎ {Number(product.priceSol).toFixed(3)}</span>
-                  <Button
-                    type="button"
-                    variant="violet"
-                    size="sm"
-                    onClick={() => void preparePurchase(product)}
-                    disabled={isBusy || !canPurchase || !connectedWallet}
-                    loading={isBusy}
-                  >
-                    {!connectedWallet ? "No wallet" : isBusy ? "..." : "Buy »"}
-                  </Button>
+                {/* Footer meta row */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[color:var(--border)] px-4 py-2 sm:px-5">
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-[color:var(--text3)]">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    {formatBytes(product.fileSizeBytes)}
+                  </span>
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-[color:var(--text3)]">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    {formatLicenseDuration(product.policy.licenseDurationSeconds)}
+                  </span>
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-[color:var(--text3)]">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    {product.policy.maxAccessCount}× reveals
+                  </span>
+                  <span className="ml-auto text-[10px] text-[color:var(--text3)]">{statusCopy.subtitle}</span>
                 </div>
               </div>
             );

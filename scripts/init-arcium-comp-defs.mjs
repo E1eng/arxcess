@@ -29,7 +29,7 @@ const COMP_DEFINITION_CONFIGS = [
   },
   {
     instructionName: "init_evaluate_and_seal_comp_def",
-    circuitName: "evaluate_and_seal_v3"
+    circuitName: "evaluate_and_seal_v4"
   }
 ];
 
@@ -67,6 +67,24 @@ function sleep(ms) {
     return Promise.resolve();
   }
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryRpc(label, fn, retries = 5, delayMs = 1000) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries - 1) {
+        break;
+      }
+      await sleep(delayMs * (attempt + 1));
+    }
+  }
+
+  throw new Error(`${label}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 function readIdl() {
@@ -195,10 +213,27 @@ async function buildUploadCircuitTx(arciumProgram, signerPubkey, compDefOffset, 
 }
 
 async function signAndSend(provider, tx) {
-  const blockInfo = await provider.connection.getLatestBlockhash("confirmed");
+  const blockInfo = await retryRpc("failed to get recent blockhash", () => {
+    return provider.connection.getLatestBlockhash("confirmed");
+  });
   tx.recentBlockhash = blockInfo.blockhash;
   tx.lastValidBlockHeight = blockInfo.lastValidBlockHeight;
-  return provider.sendAndConfirm(tx, []);
+  tx.feePayer = provider.wallet.publicKey;
+  const signedTx = await provider.wallet.signTransaction(tx);
+  const signature = await retryRpc("failed to send transaction", () => {
+    return provider.connection.sendRawTransaction(signedTx.serialize(), {
+      maxRetries: 5,
+      skipPreflight: false,
+    });
+  });
+  await retryRpc("failed to confirm transaction", () => {
+    return provider.connection.confirmTransaction({
+      blockhash: blockInfo.blockhash,
+      lastValidBlockHeight: blockInfo.lastValidBlockHeight,
+      signature,
+    }, "confirmed");
+  }, 3, 2000);
+  return signature;
 }
 
 async function uploadCircuitResumable(provider, arciumProgram, circuitName, mxeProgramId, rawCircuit, chunkSize) {

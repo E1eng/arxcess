@@ -13,7 +13,8 @@ pub use instructions::*;
 use state::ProductState;
 
 pub const COMP_DEF_OFFSET_DEPOSIT_KEY: u32 = comp_def_offset("deposit_key_v3");
-pub const COMP_DEF_OFFSET_EVALUATE_AND_SEAL: u32 = comp_def_offset("evaluate_and_seal_v3");
+pub const COMP_DEF_OFFSET_EVALUATE_AND_SEAL: u32 = comp_def_offset("evaluate_and_seal_v4");
+pub const ARCIUM_CALLBACK_OUTPUT_DELIVERY_FEE_LAMPORTS: u64 = 1_000_000;
 
 declare_id!("sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk");
 
@@ -124,8 +125,8 @@ pub mod arxcess {
         request_deposit_product_key::callback_handler(ctx, output)
     }
 
-    #[arcium_callback(encrypted_ix = "evaluate_and_seal_v3", auto_serialize = false)]
-    pub fn evaluate_and_seal_v3_callback(
+    #[arcium_callback(encrypted_ix = "evaluate_and_seal_v4", auto_serialize = false)]
+    pub fn evaluate_and_seal_v4_callback(
         ctx: Context<EvaluateAndSealCallback>,
         output: SignedComputationOutputs<EvaluateAndSealRawOutput>,
     ) -> Result<()> {
@@ -167,7 +168,7 @@ pub struct InitDepositKeyCompDef<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[init_computation_definition_accounts("evaluate_and_seal_v3", payer)]
+#[init_computation_definition_accounts("evaluate_and_seal_v4", payer)]
 #[derive(Accounts)]
 pub struct InitEvaluateAndSealCompDef<'info> {
     #[account(mut)]

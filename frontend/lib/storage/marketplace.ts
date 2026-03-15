@@ -27,6 +27,7 @@ export interface LocalProductListing {
   keyCommitmentHex?: string;
   createdAt: string;
   publishSignature?: string;
+  activationSignature?: string;
 }
 
 export interface LocalPurchaseIntent {

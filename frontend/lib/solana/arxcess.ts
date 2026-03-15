@@ -13,7 +13,7 @@ const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPA
 const ARCIUM_FEE_POOL_ACCOUNT = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
 const ARCIUM_CLOCK_ACCOUNT = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
 const DEPOSIT_KEY_COMP_DEF_OFFSET = 144409244;
-const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 3143075288;
+const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 2311564370;
 const OFFSET_BUFFER_SIZE = 4;
 const CLUSTER_ACC_SEED = "Cluster";
 const COMP_DEF_ACC_SEED = "ComputationDefinitionAccount";
@@ -267,6 +267,82 @@ export async function buildCreateProductTransaction(args: {
 }) {
   const { productState, instruction } = await buildCreateProductInstruction(args);
   const transaction = new Transaction().add(instruction);
+
+  transaction.feePayer = args.seller;
+
+  return {
+    productState,
+    transaction
+  };
+}
+
+export async function buildStageProductArciumMaterialTransaction(args: {
+  seller: PublicKey;
+  productIdHex: string;
+  encryptedKeyNonce: bigint;
+  encryptedKeyCiphertexts: Uint8Array[];
+  keyCommitmentHex: string;
+}) {
+  if (args.encryptedKeyCiphertexts.length !== 2) {
+    throw new Error("Encrypted key ciphertexts must contain exactly 2 packed field elements");
+  }
+
+  const programId = requireProgramId();
+  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
+  const ciphertextBytes = args.encryptedKeyCiphertexts.map((ciphertext, index) => {
+    return assertFixedBytes(`Encrypted key ciphertext #${index + 1}`, ciphertext, FIXED_ID_BYTES);
+  });
+  const keyCommitmentBytes = assertFixedBytes("Product key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
+  const stageData = concatBytes(
+    await getInstructionDiscriminator("stage_product_arcium_material"),
+    encodeU128(args.encryptedKeyNonce),
+    ...ciphertextBytes,
+    keyCommitmentBytes
+  );
+  const transaction = new Transaction().add(
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: args.seller, isSigner: true, isWritable: false },
+        { pubkey: productState, isSigner: false, isWritable: true }
+      ],
+      data: Buffer.from(stageData)
+    })
+  );
+
+  transaction.feePayer = args.seller;
+
+  return {
+    productState,
+    transaction
+  };
+}
+
+export async function buildDepositProductKeyTransaction(args: {
+  seller: PublicKey;
+  productIdHex: string;
+  sellerEncryptionPublicKey: Uint8Array;
+  keyCommitmentHex: string;
+}) {
+  const programId = requireProgramId();
+  const productState = deriveProductStateAddress(args.seller, args.productIdHex);
+  const sellerEncryptionPublicKey = assertFixedBytes("Seller encryption public key", args.sellerEncryptionPublicKey, FIXED_ID_BYTES);
+  const keyCommitmentBytes = assertFixedBytes("Product key commitment", hexToBytes(args.keyCommitmentHex), FIXED_ID_BYTES);
+  const depositData = concatBytes(
+    await getInstructionDiscriminator("deposit_product_key"),
+    sellerEncryptionPublicKey,
+    keyCommitmentBytes
+  );
+  const transaction = new Transaction().add(
+    new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: args.seller, isSigner: true, isWritable: true },
+        { pubkey: productState, isSigner: false, isWritable: true }
+      ],
+      data: Buffer.from(depositData)
+    })
+  );
 
   transaction.feePayer = args.seller;
 

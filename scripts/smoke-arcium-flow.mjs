@@ -21,7 +21,7 @@ const ARCIUM_PROGRAM_ID = new PublicKey("Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPA
 const ARCIUM_FEE_POOL = new PublicKey("G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC");
 const ARCIUM_CLOCK = new PublicKey("7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot");
 const DEPOSIT_KEY_COMP_DEF_OFFSET = 144409244;
-const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 3143075288;
+const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 2311564370;
 const P = createPacker(Array.from({ length: 44 }, (_, i) => ({ name: `bytes[${i}]`, type: { Integer: { signed: false, width: 8 } } })), "PackedDeliveryMaterial");
 const enc = new TextEncoder();
 
@@ -38,6 +38,12 @@ const disc = (name) => Buffer.from(IDL.instructions.find((i) => i.name === name)
 const pda = (seeds, pid = PROGRAM_ID) => PublicKey.findProgramAddressSync(seeds, pid)[0];
 const arPda = (seeds) => pda(seeds, ARCIUM_PROGRAM_ID);
 const readU128 = (buf, off) => buf.readBigUInt64LE(off) | (buf.readBigUInt64LE(off + 8) << 64n);
+const randomBigInt = (byteLength) => {
+  let value = 0n;
+  const bytes = crypto.randomBytes(byteLength);
+  for (const byte of bytes) value = (value << 8n) | BigInt(byte);
+  return value;
+};
 
 function productState(seller, productIdHex) { return pda([enc.encode("product"), seller.toBytes(), hexBytes(productIdHex)]); }
 function purchaseState(product, purchaseIdHex) { return pda([enc.encode("purchase"), product.toBytes(), hexBytes(purchaseIdHex)]); }
@@ -109,6 +115,12 @@ async function waitFor(pubkey, decode, pred, label, polls = 40, ms = 5000) {
   }
   throw new Error(`${label} timeout`);
 }
+async function fetchDecoded(pubkey, decode) {
+  const c = new Connection(RPC, "confirmed");
+  const acc = await c.getAccountInfo(pubkey, "confirmed");
+  if (!acc) throw new Error(`Missing account: ${pubkey.toBase58()}`);
+  return decode(Buffer.from(acc.data));
+}
 function pack(contentKey, iv) { return P.pack({ bytes: [...contentKey, ...iv].map((x) => BigInt(x)) }); }
 function unpack(chunks) { const u = P.unpack(chunks).bytes.map((x) => Number(x)); return { contentKey: Buffer.from(u.slice(0, 32)), iv: Buffer.from(u.slice(32, 44)) }; }
 async function keyCommitment(productIdHex, sellerWallet, ciphertextHashHex, contentKey) { return crypto.createHash("sha256").update(b(hexBytes(productIdHex), new PublicKey(sellerWallet).toBytes(), hexBytes(ciphertextHashHex), contentKey)).digest("hex"); }
@@ -147,39 +159,32 @@ async function main() {
     data: b(disc("create_product"), hexBytes(productIdHex), str(`https://example.com/meta/${productIdHex.slice(0, 8)}`), str(`cid-${productIdHex.slice(0, 16)}`), hexBytes(ciphertextHashHex), u64(1_000_000n), u16(250), u64(1234n), u64(3600), u32(1), Buffer.from([1]))
   })), "create_product");
 
-  const depOffset = BigInt(Date.now());
-  const dep = arciumAccounts(depOffset, DEPOSIT_KEY_COMP_DEF_OFFSET);
-  await send(new Transaction().add(new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      { pubkey: seller, isSigner: true, isWritable: true },
-      { pubkey: prod, isSigner: false, isWritable: true },
-      { pubkey: dep.mxeAccount, isSigner: false, isWritable: false },
-      { pubkey: dep.signPdaAccount, isSigner: false, isWritable: true },
-      { pubkey: dep.mempoolAccount, isSigner: false, isWritable: true },
-      { pubkey: dep.executingPool, isSigner: false, isWritable: true },
-      { pubkey: dep.computationAccount, isSigner: false, isWritable: true },
-      { pubkey: dep.compDefAccount, isSigner: false, isWritable: false },
-      { pubkey: dep.clusterAccount, isSigner: false, isWritable: true },
-      { pubkey: dep.poolAccount, isSigner: false, isWritable: true },
-      { pubkey: dep.clockAccount, isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: dep.arciumProgram, isSigner: false, isWritable: false }
-    ],
-    data: b(disc("request_deposit_product_key"), u64(depOffset), sellerPub, u128(encryptedKeyNonce), encryptedKeyCiphertexts[0], encryptedKeyCiphertexts[1], hexBytes(keyCommitmentHex))
-  })), "request_deposit_product_key");
-
-  const prodAfterDeposit = await waitFor(prod, decodeProduct, (s) => s.arciumCustodyReady, "deposit callback");
-  console.log({ prodAfterDeposit });
-
-  await send(new Transaction().add(new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      { pubkey: seller, isSigner: true, isWritable: false },
-      { pubkey: prod, isSigner: false, isWritable: true }
-    ],
-    data: disc("activate_product")
-  })), "activate_product");
+  await send(new Transaction().add(
+    new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: seller, isSigner: true, isWritable: false },
+        { pubkey: prod, isSigner: false, isWritable: true }
+      ],
+      data: b(disc("stage_product_arcium_material"), u128(encryptedKeyNonce), encryptedKeyCiphertexts[0], encryptedKeyCiphertexts[1], hexBytes(keyCommitmentHex))
+    }),
+    new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: seller, isSigner: true, isWritable: true },
+        { pubkey: prod, isSigner: false, isWritable: true }
+      ],
+      data: b(disc("deposit_product_key"), sellerPub, hexBytes(keyCommitmentHex))
+    }),
+    new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: seller, isSigner: true, isWritable: false },
+        { pubkey: prod, isSigner: false, isWritable: true }
+      ],
+      data: disc("activate_product")
+    })
+  ), "stage_product_arcium_material+deposit_product_key+activate_product");
 
   await waitFor(prod, decodeProduct, (s) => s.status === 1, "product active", 10, 2000);
 
@@ -197,7 +202,7 @@ async function main() {
     data: b(disc("purchase_product"), hexBytes(purchaseIdHex), Buffer.from(buyerDelivery.publicKey))
   })), "purchase_product");
 
-  const evalOffset = BigInt(Date.now() + 7777);
+  const evalOffset = randomBigInt(8);
   const sealNonce = readU128(crypto.randomBytes(16), 0);
   const ev = arciumAccounts(evalOffset, EVALUATE_AND_SEAL_COMP_DEF_OFFSET);
   await send(new Transaction().add(new TransactionInstruction({
@@ -223,6 +228,7 @@ async function main() {
 
   const purAfter = await waitFor(pur, decodePurchase, (s) => s.arciumDeliveryReady && s.status === 3, "evaluate_and_seal callback");
   console.log({ purAfter });
+  const prodAfter = await fetchDecoded(prod, decodeProduct);
 
   const revealed = unpack(new RescueCipher(x25519.getSharedSecret(Buffer.from(buyerDelivery.secretKey), mxePublicKey)).decrypt(
     purAfter.arciumDeliveryCiphertexts.map((x) => [...x]),
@@ -233,15 +239,15 @@ async function main() {
   console.log(JSON.stringify({
     productIdHex,
     purchaseIdHex,
-    onchainKeyCommitmentHex: prodAfterDeposit.keyCommitmentHex,
+    onchainKeyCommitmentHex: prodAfter.keyCommitmentHex,
     revealedCommitmentHex,
     contentKeyMatchesOriginal: revealed.contentKey.equals(contentKey),
     ivMatchesOriginal: revealed.iv.equals(iv),
-    commitmentMatchesOnchain: revealedCommitmentHex === prodAfterDeposit.keyCommitmentHex,
+    commitmentMatchesOnchain: revealedCommitmentHex === prodAfter.keyCommitmentHex,
     deliveryOwnerMatchesBuyer: Buffer.from(purAfter.arciumDeliveryEncryptionKey).equals(Buffer.from(buyerDelivery.publicKey))
   }, null, 2));
 
-  if (revealedCommitmentHex !== prodAfterDeposit.keyCommitmentHex) throw new Error("Reveal commitment mismatch");
+  if (revealedCommitmentHex !== prodAfter.keyCommitmentHex) throw new Error("Reveal commitment mismatch");
 }
 
 main().catch((error) => {

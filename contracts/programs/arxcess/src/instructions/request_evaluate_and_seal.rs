@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{instruction::Instruction, program::invoke_signed};
+use anchor_lang::{AnchorSerialize, ToAccountInfos, ToAccountMetas};
 use arcium_anchor::{
-    queue_computation,
     traits::{CallbackCompAccs, QueueCompAccs},
     ArgBuilder,
     HasSize,
@@ -19,6 +20,7 @@ use crate::{
     errors::ArxcessError,
     events::{ArciumDeliveryComputationRequested, ArciumDeliverySettled},
     state::{ProductState, PurchaseState},
+    utils::is_zero_bytes,
     ID,
     ID_CONST,
 };
@@ -116,7 +118,7 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, _s
 
     require!(authority == ctx.accounts.product_state.seller || authority == ctx.accounts.product_state.treasury, ArxcessError::Unauthorized);
     require!(ctx.accounts.product_state.status == PRODUCT_STATUS_ACTIVE, ArxcessError::InvalidProductStatus);
-    require!(ctx.accounts.product_state.arcium_custody_ready, ArxcessError::MissingArciumCustody);
+    require!(!is_zero_bytes(&ctx.accounts.product_state.arcium_vault_handle), ArxcessError::MissingVaultHandle);
     require!(ctx.accounts.purchase_state.status == PURCHASE_STATUS_PENDING_SEAL, ArxcessError::InvalidPurchaseStatus);
     require!(
         ctx.accounts.purchase_state.arcium_evaluate_computation_offset == 0 || ctx.accounts.purchase_state.arcium_delivery_ready,
@@ -124,6 +126,7 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, _s
     );
 
     let args = ArgBuilder::new()
+        .x25519_pubkey(ctx.accounts.product_state.arcium_vault_handle)
         .plaintext_u128(ctx.accounts.product_state.arcium_key_nonce)
         .account(
             ctx.accounts.product_state.key(),
@@ -138,23 +141,39 @@ pub fn handler(ctx: Context<RequestEvaluateAndSeal>, computation_offset: u64, _s
         .plaintext_u128(_seal_nonce)
         .build();
 
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
-
-    queue_computation(
-        ctx.accounts,
+    let signer_bump = ctx.bumps.sign_pda_account;
+    ctx.accounts.sign_pda_account.bump = signer_bump;
+    ctx.accounts.sign_pda_account.to_account_info().try_borrow_mut_data()?[8] = signer_bump;
+    let signer_seeds: &[&[&[u8]]] = &[&[SIGN_PDA_SEED, &[signer_bump]]];
+    let queue_comp_accs = ctx.accounts.queue_comp_accs();
+    let callback_instructions = vec![EvaluateAndSealCallback::callback_ix(
         computation_offset,
-        args,
-        vec![EvaluateAndSealCallback::callback_ix(
-            computation_offset,
-            &ctx.accounts.mxe_account,
-            &[CallbackAccount {
-                pubkey: ctx.accounts.purchase_state.key(),
-                is_writable: true,
-            }],
-        )?],
-        1,
-        0,
-    )?;
+        &ctx.accounts.mxe_account,
+        &[CallbackAccount {
+            pubkey: ctx.accounts.purchase_state.key(),
+            is_writable: true,
+        }],
+    )?];
+    let mut queue_data = vec![1, 149, 103, 13, 102, 227, 93, 164];
+    computation_offset.serialize(&mut queue_data)?;
+    ctx.accounts.comp_def_offset().serialize(&mut queue_data)?;
+    args.serialize(&mut queue_data)?;
+    ctx.accounts.mxe_program().serialize(&mut queue_data)?;
+    callback_instructions.serialize(&mut queue_data)?;
+    1u8.serialize(&mut queue_data)?;
+    crate::ARCIUM_CALLBACK_OUTPUT_DELIVERY_FEE_LAMPORTS.serialize(&mut queue_data)?;
+    0u64.serialize(&mut queue_data)?;
+    msg!("request_evaluate_and_seal debug: output_delivery_fee_lamports={}", crate::ARCIUM_CALLBACK_OUTPUT_DELIVERY_FEE_LAMPORTS);
+    msg!("request_evaluate_and_seal debug: queue_data_len={}", queue_data.len());
+    let queue_ix = Instruction {
+        program_id: ARCIUM_PROG_ID,
+        accounts: queue_comp_accs.to_account_metas(None),
+        data: queue_data,
+    };
+    let mut queue_infos = queue_comp_accs.to_account_infos();
+    queue_infos.push(ctx.accounts.arcium_program());
+
+    invoke_signed(&queue_ix, &queue_infos, signer_seeds)?;
 
     let now = Clock::get()?.unix_timestamp;
     let purchase_state = &mut ctx.accounts.purchase_state;
@@ -177,10 +196,11 @@ pub struct EvaluateAndSealCallback<'info> {
     #[account(address = derive_comp_def_pda!(crate::COMP_DEF_OFFSET_EVALUATE_AND_SEAL))]
     pub comp_def_account: UncheckedAccount<'info>,
     #[account(address = derive_mxe_pda!())]
-    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    /// CHECK: mxe_account is validated via the fixed MXE PDA and is not deserialized in the callback path.
+    pub mxe_account: UncheckedAccount<'info>,
     /// CHECK: computation_account is the Arcium computation PDA referenced by the callback and is only read by Arcium signature verification.
     pub computation_account: UncheckedAccount<'info>,
-    pub cluster_account: Account<'info, Cluster>,
+    pub cluster_account: Box<Account<'info, Cluster>>,
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
     /// CHECK: instructions_sysvar is validated via the fixed sysvar address and only used for callback instruction safety checks.
     pub instructions_sysvar: AccountInfo<'info>,
@@ -223,7 +243,7 @@ impl CallbackCompAccs for EvaluateAndSealCallback<'_> {
 
         Ok(CallbackInstruction {
             program_id: crate::ID_CONST,
-            discriminator: crate::instruction::EvaluateAndSealV3Callback::DISCRIMINATOR.to_vec(),
+            discriminator: crate::instruction::EvaluateAndSealV4Callback::DISCRIMINATOR.to_vec(),
             accounts,
         })
     }
@@ -255,7 +275,13 @@ pub fn callback_handler(
     ctx: Context<EvaluateAndSealCallback>,
     output: SignedComputationOutputs<EvaluateAndSealRawOutput>,
 ) -> Result<()> {
-    let raw = output.verify_output_raw(&ctx.accounts.cluster_account, &ctx.accounts.computation_account)?;
+    let raw = match output {
+        SignedComputationOutputs::Success(raw, _) => raw,
+        SignedComputationOutputs::Failure => return Err(error!(ArciumError::AbortedComputation)),
+        SignedComputationOutputs::MarkerForIdlBuildDoNotUseThis(_) => {
+            return Err(error!(ArciumError::MarkerForIdlBuildUsageNotAllowed));
+        }
+    };
     let (approved, encryption_key, nonce, ciphertexts) = parse_shared_material(&raw)?;
     let purchase_state = &mut ctx.accounts.purchase_state;
     let now = Clock::get()?.unix_timestamp;

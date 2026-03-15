@@ -9,6 +9,7 @@ import { getArciumFrontendBlockMessage, isArciumFrontendRuntimeReady, prepareLis
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useProducts } from "@/hooks/use-products";
 import { CategoryIcon } from "@/components/marketplace/category-icon";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { NoticeToast } from "@/components/ui/notice-toast";
@@ -78,6 +79,7 @@ type LaunchResult = {
 };
 
 export function SellerWorkbench() {
+  const { products } = useProducts();
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet();
   const { publicKey, sendTransaction } = useWallet();
@@ -192,8 +194,9 @@ export function SellerWorkbench() {
       return;
     }
 
-    const latestListing = listStoredProducts()
+    const latestListing = [...products, ...listStoredProducts()]
       .filter((entry) => entry.sellerWallet === sellerWallet && entry.publishSignature)
+      .filter((entry, index, all) => all.findIndex((candidate) => candidate.productIdHex === entry.productIdHex) === index)
       .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
 
     if (!latestListing?.publishSignature) {
@@ -236,7 +239,7 @@ export function SellerWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [buildResultState, connection, result?.listing.sellerWallet, sellerWallet]);
+  }, [buildResultState, connection, products, result?.listing.sellerWallet, sellerWallet]);
 
   const handleActivateResultListing = useCallback(async () => {
     if (!result) {

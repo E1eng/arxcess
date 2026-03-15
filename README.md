@@ -1,279 +1,311 @@
 # Arxcess
 
-Arxcess is a monorepo for a web-first encrypted digital goods marketplace built on Solana + Arcium. Sellers publish encrypted content with confidential key custody handled by Arcium's MXE network; buyers pay on-chain and receive content only after Arcium computes and delivers a buyer-specific decryption payload.
+> Encrypted digital goods marketplace on Solana + Arcium. Sellers publish files with confidential key custody handled by Arcium's MXE network. Buyers pay on-chain and receive content exclusively after Arcium computes and delivers a buyer-specific decryption payload. No seller involvement is required at reveal time — the delivery is cryptographically bound to the buyer.
 
-The platform exposes four surfaces:
+---
 
-- `Home` — landing page that routes users into the correct workflow.
-- `Explore` — searchable, filterable storefront of active listings.
-- `Launch` — seller workspace: encrypt file in-browser, upload to IPFS, publish on-chain with Arcium custody.
-- `Library` — wallet-gated hub: finalize delivery (seller), reveal with frontend preview, download decrypted assets, or revoke access.
+## Table of contents
 
-Core flow:
+- [How it works](#how-it-works)
+- [Repository structure](#repository-structure)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [Frontend surfaces](#frontend-surfaces)
+- [Solana program](#solana-program)
+- [Arcium integration](#arcium-integration)
+- [Supabase sync](#supabase-sync)
+- [Verifying on-chain state](#verifying-on-chain-state)
+- [Development workflow](#development-workflow)
+- [License](#license)
 
-1. Seller encrypts file locally and uploads ciphertext to Pinata/IPFS.
-2. Seller calls `create_product` + `request_deposit_product_key` on Solana — this queues an Arcium computation that wraps the content key under Arcium's MXE public key.
-3. Arcium callback sets `arcium_custody_ready = true` on the `ProductState` account.
-4. Buyer calls `purchase_product` on-chain.
-5. Seller calls `request_evaluate_and_seal` — this queues an Arcium computation that re-encrypts the content key under the buyer's delivery public key.
-6. Arcium callback writes the encrypted payload into `PurchaseState` and sets `arcium_delivery_ready = true`.
-7. Buyer reads the on-chain payload, decrypts locally, previews the revealed asset in the frontend, and downloads when needed.
+---
+
+## How it works
+
+The core protocol separates encryption, custody, and delivery into distinct on-chain steps:
+
+| Step | Actor | Action |
+|------|-------|--------|
+| 1 | Seller | Encrypts file locally (AES-GCM in-browser), uploads ciphertext to Pinata/IPFS |
+| 2 | Seller | Calls `create_product` + `request_deposit_product_key` → queues Arcium MXE computation to wrap the content key under MXE custody |
+| 3 | Arcium | Callback sets `arcium_custody_ready = true` on [`ProductState`](contracts/programs/arxcess/src/state/product_state.rs) |
+| 4 | Buyer | Calls `purchase_product` on-chain, auto-generates a delivery keypair in-browser |
+| 5 | Seller | Calls `request_evaluate_and_seal` → queues Arcium computation to re-encrypt the content key under the buyer's delivery public key |
+| 6 | Arcium | Callback writes encrypted payload into [`PurchaseState`](contracts/programs/arxcess/src/state/purchase_state.rs), sets `arcium_delivery_ready = true` |
+| 7 | Buyer | Reads on-chain payload, decrypts with their delivery private key, previews and downloads in-browser |
+
+The seller never touches the buyer's decrypted content. Arcium's MXE network performs the re-encryption in a confidential compute environment — the result is cryptographically verifiable on-chain.
+
+---
 
 ## Repository structure
 
 ```text
-.
-├── frontend/           # Next.js app for Home, Explore, Launch, and Library flows
-├── sdk/ts/             # Shared TypeScript SDK package
-├── contracts/          # Anchor workspace and Solana program config
-├── encrypted-ixs/      # Rust workspace member for encrypted instruction-related logic
-├── context/            # Local project context notes
-├── .env.example        # Example environment values
-├── Cargo.toml          # Rust workspace manifest
-└── package.json        # Root npm workspace config
+arxcess/
+├── frontend/               # Next.js 14 app (Home, Explore, Launch, Library)
+│   ├── app/                # Next.js App Router pages and API routes
+│   ├── components/         # React components (purchase/, upload/, ui/, marketplace/)
+│   ├── hooks/              # Custom React hooks (use-purchases, use-products)
+│   ├── lib/                # Client utilities (arcium, anchor, solana, supabase, crypto, ipfs)
+│   └── .env.local          # Local environment config (not committed)
+├── sdk/ts/                 # Shared TypeScript SDK (@arxcess/sdk)
+├── contracts/              # Anchor workspace
+│   ├── Anchor.toml         # Anchor config
+│   └── programs/arxcess/   # Solana program source (Rust)
+├── encrypted-ixs/          # Arcium circuit definitions (Rust)
+├── build/                  # Compiled Arcium circuit interface files (.idarc)
+├── scripts/                # CLI smoke-test scripts
+├── supabase/               # Supabase SQL schema files
+├── Cargo.toml              # Rust workspace manifest
+└── package.json            # npm workspace root
 ```
+
+---
 
 ## Tech stack
 
-- Next.js 14 + React 18 + TypeScript
-- Solana wallet adapter + Anchor (Devnet)
-- Arcium MXE — confidential key custody and buyer-specific delivery
-- Pinata/IPFS — encrypted ciphertext and metadata storage
-- Supabase — optional shared listing sync across browsers
-- Rust workspace for Anchor program and encrypted-instruction helpers
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, React 18, TypeScript, TailwindCSS |
+| Wallet | Solana Wallet Adapter, `@coral-xyz/anchor` |
+| On-chain | Solana Devnet, Anchor program |
+| Confidential compute | Arcium MXE (live on Devnet) |
+| Storage | Pinata/IPFS (ciphertext + metadata JSON) |
+| Shared state (optional) | Supabase (listings + purchase history) |
+| Crypto (client) | AES-GCM in-browser via Web Crypto API |
 
-## Prerequisites
+---
 
-### Frontend
+## Getting started
 
-- Node.js 20+ recommended
-- npm 10+ recommended
+### Prerequisites
 
-### Contracts
+- Node.js 20+, npm 10+
+- (For contract work) Rust toolchain, Solana CLI, Anchor CLI
 
-If you want to work on the Solana program side as well, install:
-
-- Rust toolchain
-- Solana CLI
-- Anchor CLI
-
-## Getting started in WSL / Linux
-
-Install dependencies from the repo root:
+### Install and run
 
 ```bash
+# From the repo root — installs all npm workspace dependencies
 npm install
+
+# Start the frontend dev server
+npm run dev
+# → http://localhost:3000
 ```
 
-Start the frontend development server:
+### Available scripts
 
 ```bash
-npm run dev
+npm run dev          # Start Next.js dev server
+npm run build        # Production build
+npm run lint         # ESLint
+npm run typecheck    # tsc --noEmit (zero errors required)
 ```
 
-The app runs at:
-
-```text
-http://localhost:3000
-```
-
-## Available scripts
-
-From the repo root:
-
-```bash
-npm run dev
-npm run build
-npm run lint
-npm run typecheck
-```
-
-These forward to the `frontend` workspace.
+---
 
 ## Environment variables
 
-Example values live in `.env.example`:
+Create `frontend/.env.local` (never commit this file):
 
 ```env
+# Solana
 NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
 NEXT_PUBLIC_PROGRAM_ID=sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk
-NEXT_PUBLIC_TREASURY_WALLET=
-PINATA_JWT=
-NEXT_PUBLIC_SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_TREASURY_WALLET=<your_devnet_treasury_pubkey>
+
+# Pinata (required for Launch uploads)
+PINATA_JWT=<your_pinata_jwt>
+
+# Supabase (optional — enables shared listing and purchase history)
+NEXT_PUBLIC_SUPABASE_URL=<your_supabase_project_url>
+SUPABASE_SERVICE_ROLE_KEY=<your_supabase_service_role_key>
 ```
 
-For local frontend development, create:
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | Yes | Solana JSON-RPC endpoint |
+| `NEXT_PUBLIC_PROGRAM_ID` | Yes | On-chain Arxcess program address |
+| `NEXT_PUBLIC_TREASURY_WALLET` | Yes | Protocol fee destination for `create_product` and `purchase_product` |
+| `PINATA_JWT` | For Launch | Authenticated Pinata uploads (ciphertext + metadata) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Optional | Enables cross-browser listing and purchase sync |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Server-side Supabase writes via API routes |
 
-```text
-frontend/.env.local
-```
+A template with all keys is provided in [`.env.example`](.env.example).
 
-Recommended local setup:
+---
 
-```env
-NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
-NEXT_PUBLIC_PROGRAM_ID=sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk
-NEXT_PUBLIC_TREASURY_WALLET=your_devnet_treasury_wallet
-PINATA_JWT=your_pinata_jwt
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-```
+## Frontend surfaces
 
-### Notes
+### Home — [`frontend/app/page.tsx`](frontend/app/page.tsx)
 
-- `NEXT_PUBLIC_SOLANA_RPC_URL` sets the client RPC endpoint.
-- `NEXT_PUBLIC_PROGRAM_ID` is required for program-aware flows.
-- `NEXT_PUBLIC_TREASURY_WALLET` is required for on-chain `create_product` and `purchase_product` flows so protocol fees have a valid destination.
-- `PINATA_JWT` is required for upload flows that send encrypted files and metadata to Pinata.
-- `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` enable shared marketplace listings across browsers via `frontend/app/api/listings/route.ts`.
+Landing page. Introduces the encrypted marketplace model and routes users to the correct workflow based on their role (buyer or seller).
 
-To enable shared listings, create the table in Supabase by running:
+### Explore — [`frontend/components/purchase/product-catalog.tsx`](frontend/components/purchase/product-catalog.tsx)
 
-```sql
--- see supabase/marketplace_listings.sql
-```
+Searchable, filterable storefront of active listings.
 
-Then apply the SQL from `supabase/marketplace_listings.sql` in the Supabase SQL editor.
+- Displays listings with category icon, title, description, price, reveal limit, and license duration
+- Red badge for revocable listings
+- Checkout triggers `purchase_product` on-chain; delivery keypair is auto-generated in-browser
+- Purchase intent stored locally (and synced to Supabase if configured)
 
-Do not commit local env files.
+### Launch — [`frontend/components/upload/seller-workbench.tsx`](frontend/components/upload/seller-workbench.tsx)
 
-## Frontend flow
+Step-by-step seller workspace for publishing encrypted listings.
 
-### Home
+1. Fill listing metadata (title, description, category, price, license duration, reveal limit, revocable flag)
+2. Select file — encrypted in-browser with AES-GCM via Web Crypto API
+3. Ciphertext and metadata uploaded to Pinata/IPFS
+4. Three wallet-signed transactions:
+   - `create_product` — registers the listing on-chain
+   - `request_deposit_product_key` — queues Arcium MXE custody computation
+   - `activate_product` — activates after Arcium callback settles
+5. Listing stored locally and optionally synced to Supabase
 
-The landing page introduces the encrypted marketplace model and routes users into the correct public workflow:
+### Library — [`frontend/components/purchase/purchases-list.tsx`](frontend/components/purchase/purchases-list.tsx)
 
-- `Explore` for browsing and checkout
-- `Launch` for publishing a locked product
-- `Library` for opening delivered purchases
+Wallet-gated hub for buyers and sellers. Shows two tabs:
 
-### Launch
+**Assets tab** — active purchases with delivery state
 
-The launch workspace:
+| Action | Available to |
+|--------|-------------|
+| Finalize delivery | Seller wallet only (triggers `request_evaluate_and_seal`) |
+| Reveal | Buyer wallet, after `arcium_delivery_ready = true` |
+| Download | Buyer wallet, after a successful reveal |
+| Revoke access | Seller wallet, if listing is marked revocable |
 
-- collects listing metadata
-- uses a media-focused taxonomy: `Image`, `Video / GIF`, or `Other`
-- encrypts the chosen file in the browser
-- uploads ciphertext to Pinata/IPFS
-- uploads metadata JSON
-- asks the wallet to sign separate Devnet transactions for product creation, Arcium custody queueing, and later activation when the callback has settled
-- stores the resulting listing locally and optionally in Supabase
-- shows only essential listing terms such as price, access window, reveal limit, and revocable status
+Each asset card shows delivery status, reveal count, purchase date, expiry, and an expandable transaction trail (Purchase tx, Publish tx, Delivery tx).
 
-### Explore
+**History tab** — full chronological purchase history with expandable transaction details per entry.
 
-The explore page reads stored listings and presents a minimal storefront. Buying sends the on-chain `purchase_product` transaction from the connected wallet.
+---
 
-- focuses the storefront on `Image`, `Video / GIF`, and `Other` listing types
-- auto-generates or reuses the purchaser delivery key in-browser
-- stores purchase intents locally after checkout succeeds
-- highlights only essential public listing details such as publisher, price, access window, reveal limit, and revocable status
+## Solana program
 
-### Library
+Source: [`contracts/programs/arxcess/`](contracts/programs/arxcess/)
 
-The library page is the reveal hub backed by local browser state plus on-chain purchase status. After checkout succeeds, entries move into `pending_seal` until delivery is finalized.
+Key instructions:
 
-- shows purchased items with delivery status
-- shows `Finalize delivery` only to the wallet that published the listing
-- shows `Reveal` only to the wallet that created the purchase, then surfaces `Download` after a successful reveal
-- shows `Revoke access` only to the publishing wallet when the listing is revocable
+| Instruction | Description |
+|-------------|-------------|
+| `create_product` | Initializes `ProductState` on-chain |
+| `request_deposit_product_key` | Queues Arcium computation to wrap content key under MXE custody |
+| `activate_product` | Marks listing as active after custody callback settles |
+| `purchase_product` | Initializes `PurchaseState`, records buyer delivery pubkey |
+| `request_evaluate_and_seal` | Queues Arcium computation to re-encrypt content key for buyer |
+| `revoke_purchase` | Revokes buyer access (seller only, revocable listings) |
 
-## Contracts
+Key state accounts:
 
-The Anchor workspace is configured in `contracts/Anchor.toml`.
+| Account | File | Description |
+|---------|------|-------------|
+| `ProductState` | [`state/product_state.rs`](contracts/programs/arxcess/src/state/product_state.rs) | Listing metadata, Arcium custody flags, ciphertext material |
+| `PurchaseState` | [`state/purchase_state.rs`](contracts/programs/arxcess/src/state/purchase_state.rs) | Buyer delivery key, encrypted payload, delivery flags |
 
-Current localnet program configuration includes:
-
-- cluster: `Localnet`
-- wallet: `~/.config/solana/id.json`
-
-To run Anchor tests from the contracts workspace:
+Anchor workspace config: [`contracts/Anchor.toml`](contracts/Anchor.toml)
 
 ```bash
+# Run Anchor tests (requires Rust + Solana + Anchor CLI)
 anchor test
 ```
 
-Make sure your Solana and Anchor toolchains are installed and configured first.
+---
 
-## Verifying Arcium integration on-chain
+## Arcium integration
 
-Every Arcium computation leaves verifiable on-chain state. You can independently confirm that Arcium is doing real confidential work using the Solana CLI or a script.
+Arcium circuit definitions: [`encrypted-ixs/src/lib.rs`](encrypted-ixs/src/lib.rs)
 
-### Method 1 — Solana Explorer (browser)
+| Circuit | Purpose |
+|---------|---------|
+| `deposit_key_v3` | Wraps seller content key under Arcium MXE custody |
+| `evaluate_and_seal_v4` | Re-encrypts content key under buyer delivery public key |
 
-After publishing a listing or finalizing delivery, the UI shows the Arcium **Queue tx** and **Delivery tx** in the proof panel. The custody settlement itself is asynchronous, so if Arcium has not called back yet you may see a pending settlement status without a separate callback signature. Click any available link to open the transaction on [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet). Look for:
+The circuits are compiled to `.idarc` interface files in [`build/`](build/). The Anchor program references these offsets at instruction time.
 
-- CPI calls to the Arcium program (`arcMXE...` program ID) inside the transaction.
-- Anchor events emitted: `ArciumProductKeyComputationRequested`, `ArciumProductKeySettled`, `ArciumDeliverySettled`.
+Arcium computation is **live on Devnet**. Every publish and delivery goes through real MXE nodes — no mocking.
 
-### Method 2 — Terminal: read on-chain account state
+---
+
+## Supabase sync
+
+Supabase is optional. When `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set:
+
+- Listings published via Launch are synced to the `active_listings` table
+- Purchases made via Explore are synced to the `purchases` table
+- Library and Explore fetch from Supabase first, falling back to `localStorage`
+
+SQL schema files: [`supabase/`](supabase/)
+
+API routes (server-side):
+
+| Route | File |
+|-------|------|
+| `GET/POST /api/listings` | [`frontend/app/api/listings/route.ts`](frontend/app/api/listings/route.ts) |
+| `GET/POST /api/purchases` | [`frontend/app/api/purchases/route.ts`](frontend/app/api/purchases/route.ts) |
+
+Without Supabase, all state is browser-local to `localStorage`. Cross-browser and cross-device visibility requires Supabase.
+
+---
+
+## Verifying on-chain state
+
+### Via Solana Explorer
+
+After publishing or finalizing delivery, the Library shows **Publish tx** and **Delivery tx** links in the transaction trail. Open them on [Solana Explorer (Devnet)](https://explorer.solana.com/?cluster=devnet) and look for:
+
+- CPI calls to the Arcium program (`arcMXE...`)
+- Anchor events: `ArciumProductKeyComputationRequested`, `ArciumProductKeySettled`, `ArciumDeliverySettled`
+
+### Via CLI
 
 ```bash
-# Substitute your program ID and product/purchase account pubkeys
+# Read raw ProductState account data
 solana account <PRODUCT_STATE_PUBKEY> --url devnet --output json | \
   node -e "
 const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
 const buf = Buffer.from(d.account.data[0], 'base64');
-// arcium_custody_ready is a bool stored at a known offset in ProductState
-// Check contracts/programs/arxcess/src/state/product_state.rs for layout
-console.log('raw data hex:', buf.toString('hex').slice(0, 120));
+// See contracts/programs/arxcess/src/state/product_state.rs for field layout
+console.log('raw hex:', buf.toString('hex').slice(0, 160));
 "
 ```
 
-### Method 3 — Smoke test script
-
-The repo ships `scripts/smoke-arcium-flow.mjs` which exercises the full end-to-end Arcium flow from the command line, prints every transaction signature, and cryptographically verifies the delivery commitment:
+### Via smoke-test script
 
 ```bash
 node scripts/smoke-arcium-flow.mjs
 ```
 
-The script:
-1. Creates a product and calls `request_deposit_product_key` → prints `custody_tx`.
-2. Polls until `arcium_custody_ready = true` on the `ProductState` account.
-3. Creates a purchase and calls `request_evaluate_and_seal` → prints `delivery_tx`.
-4. Polls until `arcium_delivery_ready = true` on the `PurchaseState` account.
-5. Reads `arcium_delivery_encryption_key` + ciphertexts from on-chain state, decrypts, and asserts the commitment hash matches the original content hash.
+The script runs the full end-to-end flow:
 
-A passing run is cryptographic proof that Arcium performed real confidential computation — no hardcoded shortcuts could produce a matching commitment hash.
+1. Creates a product → calls `request_deposit_product_key` → prints `custody_tx`
+2. Polls until `arcium_custody_ready = true` on `ProductState`
+3. Creates a purchase → calls `request_evaluate_and_seal` → prints `delivery_tx`
+4. Polls until `arcium_delivery_ready = true` on `PurchaseState`
+5. Decrypts on-chain payload and asserts the commitment hash matches original content
 
-### Method 4 — Fetch Arcium computation account directly
+A passing run is cryptographic proof that Arcium performed real confidential computation.
 
-```bash
-# arcium_deposit_computation_offset is stored in ProductState once queued
-# Use it to derive and fetch the MXEComputationAccount on-chain
-solana account <COMPUTATION_ACCOUNT_PUBKEY> --url devnet --output json
+---
+
+## Development workflow
+
+```
+1. Configure frontend/.env.local (see Environment variables above)
+2. npm run dev
+3. Connect a Devnet wallet (e.g. Phantom in Devnet mode)
+4. Open Launch → publish a listing
+5. Open Explore → buy the listing from a second wallet
+6. Open Library with the seller wallet → Finalize delivery
+7. Open Library with the buyer wallet → Reveal and Download
 ```
 
-A non-empty `MXEComputationAccount` with a matching `computation_id` proves the Arcium MXE node accepted and processed the job.
+For type safety, always run `npm run typecheck` before pushing.
 
-## Development notes
-
-- Frontend state is browser-local for listings, purchases, and delivery keys, with optional Supabase sync for shared listings.
-- The purchaser delivery keypair is auto-generated in-browser at checkout — no manual setup needed.
-- Arcium confidential computation is live on Devnet; every publish and delivery goes through real MXE nodes.
-
-## Git hygiene
-
-The repository ignores common generated artifacts such as:
-
-- `node_modules`
-- Next.js build output
-- Rust `target/`
-- local env files
-- logs and TypeScript build info
-
-## Suggested workflow
-
-1. Configure `frontend/.env.local`
-2. Run `npm run dev`
-3. Connect a wallet
-4. Open `Launch` and publish a listing
-5. Review it in `Explore`
-6. Purchase it from a second wallet
-7. Open `Library` with the publishing wallet to finalize delivery if needed
-8. Open `Library` with the purchasing wallet to reveal and download
+---
 
 ## License
 

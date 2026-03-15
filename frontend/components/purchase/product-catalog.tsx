@@ -11,6 +11,7 @@ import { WalletAddress } from "@/components/ui/WalletAddress";
 import { useDeliveryKeys } from "@/hooks/use-delivery-keys";
 import { useProducts } from "@/hooks/use-products";
 import { hasConfiguredProgramId, hasConfiguredTreasuryPublicKey } from "@/lib/anchor/client";
+import { hasSupabasePurchasesPublicConfig, upsertMarketplacePurchase } from "@/lib/marketplace/purchases";
 import { CATEGORY_LABELS, MARKETPLACE_CATEGORIES, normalizeMarketplaceCategory } from "@/lib/marketplace/categories";
 import { fetchOnchainProductStates, type DecodedProductState } from "@/lib/solana/account-state";
 import { buildPurchaseTransaction } from "@/lib/solana/arxcess";
@@ -20,6 +21,11 @@ import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
 
 const CATEGORIES = MARKETPLACE_CATEGORIES;
 type SortKey = "default" | "price_asc" | "price_desc";
+type ExploreToast = {
+  title: string;
+  message: string;
+  variant: "info" | "success";
+};
 
 export function ProductCatalog() {
   const { connection } = useConnection();
@@ -29,18 +35,11 @@ export function ProductCatalog() {
   const { ensureKeypair } = useDeliveryKeys(connectedWallet);
   const [busyProductId, setBusyProductId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusToast, setStatusToast] = useState<ExploreToast | null>(null);
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>("default");
-  const [prepared, setPrepared] = useState<
-    | {
-        product: LocalProductListing;
-        purchase: LocalPurchaseIntent;
-      }
-    | null
-  >(null);
 
   useEffect(() => {
     let ignore = false;
@@ -143,6 +142,10 @@ export function ProductCatalog() {
 
   const hasActiveFilters = Boolean(search || categoryFilter || sort !== "default");
 
+  function showStatus(title: string, message: string, variant: ExploreToast["variant"] = "info") {
+    setStatusToast({ title, message, variant });
+  }
+
   async function preparePurchase(product: LocalProductListing) {
     if (!publicKey || !sendTransaction) {
       setError("Connect a wallet before buying on-chain.");
@@ -168,12 +171,12 @@ export function ProductCatalog() {
 
     setBusyProductId(product.productIdHex);
     setError(null);
-    setStatusMessage("Preparing secure checkout...");
+    showStatus("Checkout", "Preparing secure checkout...");
 
     try {
       const deliveryKeypair = ensureKeypair();
       const purchaseIdHex = randomHexId();
-      setStatusMessage("Building purchase transaction...");
+      showStatus("Checkout", "Building purchase transaction...");
       const { transaction } = await buildPurchaseTransaction({
         buyer: publicKey,
         listing: product,
@@ -184,10 +187,10 @@ export function ProductCatalog() {
 
       transaction.recentBlockhash = latestBlockhash.blockhash;
 
-      setStatusMessage("Waiting for wallet approval to pay on-chain...");
+      showStatus("Checkout", "Waiting for wallet approval to pay on-chain...");
       const transactionSignature = await sendTransaction(transaction, connection);
 
-      setStatusMessage("Payment sent. Waiting for on-chain confirmation...");
+      showStatus("Checkout", "Payment sent. Waiting for on-chain confirmation...");
       await confirmTransactionOrThrow({
         connection,
         signature: transactionSignature,
@@ -205,6 +208,7 @@ export function ProductCatalog() {
         purchaseIdHex,
         productIdHex: product.productIdHex,
         buyerWallet: connectedWallet,
+        sellerWallet: product.sellerWallet,
         buyerDeliveryPublicKeyBase64: deliveryKeypair.publicKeyBase64,
         amountSol: product.priceSol,
         status: "pending_seal",
@@ -218,14 +222,18 @@ export function ProductCatalog() {
       };
 
       saveStoredPurchase(purchase);
-      setPrepared({
-        product,
-        purchase
-      });
-      setStatusMessage("Purchase confirmed. The item will appear in Library until delivery is ready.");
+
+      if (hasSupabasePurchasesPublicConfig()) {
+        try {
+          await upsertMarketplacePurchase(purchase);
+        } catch {
+        }
+      }
+
+      showStatus("Purchase confirmed", `${product.title} is now in your Library. Wait until delivery is ready.`, "success");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to execute on-chain purchase.");
-      setStatusMessage(null);
+      setStatusToast(null);
     } finally {
       setBusyProductId(null);
     }
@@ -235,91 +243,92 @@ export function ProductCatalog() {
     <div className="flex flex-col gap-4">
 
       {/* ── Page header ──────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-[28px] border border-[color:var(--border)] bg-[linear-gradient(140deg,rgba(107,80,255,0.18),rgba(12,21,37,0.98)_55%,rgba(6,182,212,0.1))] shadow-[0_24px_80px_rgba(3,7,18,0.45)]">
-        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.95fr)] lg:p-5">
-          <div className="flex flex-col gap-4">
+      <div className="rounded-[28px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.88)] shadow-[0_18px_50px_rgba(3,7,18,0.35)]">
+        <div className="flex flex-col gap-4 p-4 lg:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#9B8FFF]">Explore</p>
-              <h1 className="mt-1 font-head text-[22px] font-bold tracking-[-0.03em] text-white sm:text-[28px]">Encrypted media worth unlocking.</h1>
-              <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:var(--text2)]">Filter by media type, scan pricing faster, and buy only listings that are already live on-chain.</p>
+              <h1 className="mt-1 font-head text-[22px] font-bold tracking-[-0.03em] text-white sm:text-[28px]">Find live encrypted listings.</h1>
+              <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:var(--text2)]">Browse active listings, compare pricing, and buy with a calmer, more consistent layout.</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.72)] px-3.5 py-3 backdrop-blur">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Showing</p>
-                <p className="mt-1.5 font-head text-[22px] font-bold text-white">{summary.filteredCount}</p>
-                <p className="mt-1 text-[11px] text-[color:var(--text2)]">Visible after filters.</p>
-              </div>
-              <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.72)] px-3.5 py-3 backdrop-blur">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Floor</p>
-                <div className="mt-1.5 flex items-end gap-1.5">
-                  <span className="font-head text-[22px] font-bold text-white">{summary.floorPrice === null ? "—" : summary.floorPrice.toFixed(3)}</span>
-                  {summary.floorPrice === null ? null : <span className="pb-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--text3)]">SOL</span>}
-                </div>
-                <p className="mt-1 text-[11px] text-[color:var(--text2)]">Lowest live ask.</p>
-              </div>
-              <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.72)] px-3.5 py-3 backdrop-blur">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Mix</p>
-                <p className="mt-1.5 font-head text-[22px] font-bold text-white">{summary.categoryCount}</p>
-                <p className="mt-1 text-[11px] text-[color:var(--text2)]">Media groups, {summary.revocableCount} revocable.</p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[24px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.8)] p-4 backdrop-blur-xl sm:p-4.5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#9B8FFF]">Controls</p>
-                <h2 className="mt-1 font-head text-[18px] font-bold text-white">Refine quickly</h2>
-              </div>
+            <div className="flex items-center gap-3">
+              {connectedWallet ? <WalletAddress address={connectedWallet} shortened /> : null}
               {hasActiveFilters ? (
                 <Button type="button" variant="ghost" size="sm" onClick={() => { setSearch(""); setCategoryFilter(null); setSort("default"); }}>
                   Reset
                 </Button>
               ) : null}
             </div>
-            <div className="mt-4 space-y-3">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search title or description"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-[16px] border border-[color:var(--border)] bg-[color:var(--surface)] py-2.5 pl-4 pr-10 text-[13px] text-white placeholder:text-[color:var(--text3)] focus:border-[#6B50FF] focus:outline-none"
-                />
-                {search ? (
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--text3)] transition hover:text-white"
-                    aria-label="Clear search"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.4)] px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Showing</p>
+              <p className="mt-1.5 font-head text-[22px] font-bold text-white">{summary.filteredCount}</p>
+              <p className="mt-1 text-[11px] text-[color:var(--text2)]">Live listings after filters.</p>
+            </div>
+            <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.4)] px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Floor</p>
+              <div className="mt-1.5 flex items-end gap-1.5">
+                <span className="font-head text-[22px] font-bold text-white">{summary.floorPrice === null ? "—" : summary.floorPrice.toFixed(3)}</span>
+                {summary.floorPrice === null ? null : <span className="pb-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--text3)]">SOL</span>}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter(null)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] transition ${categoryFilter === null ? "border-[#6B50FF] bg-[#6B50FF] text-white shadow-[0_10px_30px_rgba(107,80,255,0.28)]" : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"}`}
-                >
-                  All media
-                </button>
-                {CATEGORIES.map((cat) => (
+              <p className="mt-1 text-[11px] text-[color:var(--text2)]">Lowest active price.</p>
+            </div>
+            <div className="rounded-[20px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.4)] px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Mix</p>
+              <p className="mt-1.5 font-head text-[22px] font-bold text-white">{summary.categoryCount}</p>
+              <p className="mt-1 text-[11px] text-[color:var(--text2)]">Media groups, {summary.revocableCount} revocable.</p>
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.5)] p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+              <div className="space-y-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search title or description"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-11 w-full rounded-[16px] border border-[color:var(--border)] bg-[color:var(--surface)] py-2.5 pl-4 pr-10 text-[13px] text-white placeholder:text-[color:var(--text3)] focus:border-[#6B50FF] focus:outline-none"
+                  />
+                  {search ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--text3)] transition hover:text-white"
+                      aria-label="Clear search"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] transition ${categoryFilter === cat ? "border-[#6B50FF] bg-[#6B50FF] text-white shadow-[0_10px_30px_rgba(107,80,255,0.28)]" : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"}`}
+                    onClick={() => setCategoryFilter(null)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] transition ${categoryFilter === null ? "border-[#6B50FF] bg-[#6B50FF] text-white" : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"}`}
                   >
-                    <CategoryIcon category={cat} className="h-3 w-3" />
-                    {CATEGORY_LABELS[cat]}
+                    All media
                   </button>
-                ))}
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] transition ${categoryFilter === cat ? "border-[#6B50FF] bg-[#6B50FF] text-white" : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"}`}
+                    >
+                      <CategoryIcon category={cat} className="h-3 w-3" />
+                      {CATEGORY_LABELS[cat]}
+                    </button>
+                  ))}
+                </div>
               </div>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
-                className="h-10 w-full rounded-[16px] border border-[color:var(--border)] bg-[color:var(--surface)] px-4 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)] focus:border-[#6B50FF] focus:outline-none"
+                className="h-11 w-full rounded-[16px] border border-[color:var(--border)] bg-[color:var(--surface)] px-4 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)] focus:border-[#6B50FF] focus:outline-none"
               >
                 <option value="default">Default sorting</option>
                 <option value="price_asc">Price: low to high</option>
@@ -329,21 +338,6 @@ export function ProductCatalog() {
           </div>
         </div>
       </div>
-
-      {/* Status callouts */}
-      {statusMessage ? (
-        <div className="callout callout--info">
-          <strong>Checkout</strong>
-          <span className="text-[color:var(--text2)]">{statusMessage}</span>
-        </div>
-      ) : null}
-
-      {prepared ? (
-        <div className="callout callout--success">
-          <strong>Purchase confirmed</strong>
-          <span className="text-[color:var(--text2)]">{prepared.product.title} — open Library to wait for delivery.</span>
-        </div>
-      ) : null}
 
       {/* ── Product list ─────────────────────────────────────── */}
       <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -370,33 +364,23 @@ export function ProductCatalog() {
             const isBusy = busyProductId === product.productIdHex;
             const statusCopy = resolveProductStatusCopy(onchain);
             const normalizedCategory = normalizeMarketplaceCategory(product.category);
-            const categoryFrameClass = normalizedCategory === "image"
-              ? "from-[#6B50FF]/25 via-[#6B50FF]/8 to-transparent text-[#9B8FFF]"
-              : normalizedCategory === "video_gif"
-                ? "from-cyan-400/20 via-cyan-400/8 to-transparent text-cyan-200"
-                : "from-fuchsia-400/18 via-fuchsia-400/6 to-transparent text-fuchsia-200";
 
             return (
-              <div key={product.productIdHex} className="group flex h-full flex-col overflow-hidden rounded-[24px] border border-[color:var(--border)] bg-[linear-gradient(180deg,rgba(12,21,37,0.96),rgba(12,21,37,0.84))] shadow-[0_18px_50px_rgba(3,7,18,0.45)] transition duration-200 hover:-translate-y-1 hover:border-[rgba(107,80,255,0.45)] hover:shadow-[0_28px_70px_rgba(3,7,18,0.62)]">
-                <div className="relative overflow-hidden border-b border-[color:var(--border)] px-4 pb-4 pt-4">
-                  <div className={`absolute inset-0 bg-gradient-to-br ${categoryFrameClass}`} />
-                  <div className="relative flex items-start justify-between gap-3">
+              <div key={product.productIdHex} className="group flex h-full flex-col overflow-hidden rounded-[24px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.92)] shadow-[0_16px_40px_rgba(3,7,18,0.32)] transition hover:border-[rgba(107,80,255,0.28)] hover:bg-[rgba(14,24,42,0.96)]">
+                <div className="border-b border-[color:var(--border)] px-4 pb-4 pt-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="gray">{CATEGORY_LABELS[normalizedCategory]}</Badge>
-                      {product.policy.revocable ? <Badge variant="amber">Revocable</Badge> : null}
+                      {product.policy.revocable ? <Badge variant="red">Revocable</Badge> : null}
                     </div>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-black/20 backdrop-blur text-white/90">
-                      <CategoryIcon category={normalizedCategory} className="h-4.5 w-4.5" />
+                    <div className="flex h-11 w-11 items-center justify-center rounded-[18px] border border-[color:var(--border2)] bg-[rgba(5,10,20,0.45)] text-[#9B8FFF]">
+                      <CategoryIcon category={normalizedCategory} className="h-5 w-5" />
                     </div>
                   </div>
 
-                  <div className="relative mt-8 flex min-h-[118px] flex-col justify-end rounded-[20px] border border-white/8 bg-[rgba(5,10,20,0.28)] p-3.5 backdrop-blur-sm">
-                    <div className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--text2)]">
-                      <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
-                      Encrypted preview
-                    </div>
-                    <h3 className="line-clamp-2 font-head text-[18px] font-bold text-white">{product.title}</h3>
-                    <p className="mt-1.5 line-clamp-3 text-[13px] leading-5 text-[color:var(--text2)]">{product.description}</p>
+                  <div className="mt-5">
+                    <h3 className="line-clamp-2 font-head text-[20px] font-bold leading-tight text-white">{product.title}</h3>
+                    <p className="mt-2 line-clamp-3 max-w-[44ch] text-[13px] leading-6 text-[color:var(--text2)]">{product.description}</p>
                   </div>
                 </div>
 
@@ -406,7 +390,7 @@ export function ProductCatalog() {
                       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">Price</p>
                       <div className="mt-1 flex items-baseline gap-1.5">
                         <span className="font-mono text-[18px] font-bold text-white">{Number(product.priceSol).toFixed(3)}</span>
-                        <span className="font-mono text-[10px] text-[color:var(--text3)]">SOL</span>
+                        <span className="font-mono text-[12px] font-bold text-[color:var(--text2)]">SOL</span>
                       </div>
                     </div>
                     <Button
@@ -459,6 +443,7 @@ export function ProductCatalog() {
       ) : null}
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
+      <NoticeToast message={statusToast?.message ?? null} title={statusToast?.title} variant={statusToast?.variant ?? "info"} open={Boolean(statusToast)} onClose={() => setStatusToast(null)} />
     </div>
   );
 }

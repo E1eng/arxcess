@@ -19,7 +19,16 @@ export function useProducts() {
       listings.forEach((listing) => {
         saveStoredProduct(listing);
       });
-      setProducts(listings);
+      const localListings = listStoredProducts();
+      const merged = [...listings];
+
+      localListings.forEach((listing) => {
+        if (!merged.some((entry) => entry.productIdHex === listing.productIdHex)) {
+          merged.push(listing);
+        }
+      });
+
+      setProducts(merged);
     } catch {
       setProducts(listStoredProducts());
     }

@@ -34,6 +34,7 @@ export interface LocalPurchaseIntent {
   purchaseIdHex: string;
   productIdHex: string;
   buyerWallet: string | null;
+  sellerWallet?: string | null;
   buyerDeliveryPublicKeyBase64: string;
   amountSol: string;
   status: "prepared" | "pending_seal" | "delivered" | "revoked";

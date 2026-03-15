@@ -1736,7 +1736,6 @@ name = "encrypted-ixs"
 version = "0.1.0"
 dependencies = [
  "arcis",
- "blake3",
  "sha2 0.10.9",
 ]
 

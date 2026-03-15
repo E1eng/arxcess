@@ -24,7 +24,6 @@ const DEPOSIT_KEY_COMP_DEF_OFFSET = 144409244;
 const EVALUATE_AND_SEAL_COMP_DEF_OFFSET = 3143075288;
 const P = createPacker(Array.from({ length: 44 }, (_, i) => ({ name: `bytes[${i}]`, type: { Integer: { signed: false, width: 8 } } })), "PackedDeliveryMaterial");
 const enc = new TextEncoder();
-const dec = new TextDecoder();
 
 const b = (...xs) => Buffer.concat(xs.map((x) => Buffer.from(x)));
 const u32 = (n) => { const x = Buffer.alloc(4); x.writeUInt32LE(n, 0); return x; };
@@ -39,7 +38,6 @@ const disc = (name) => Buffer.from(IDL.instructions.find((i) => i.name === name)
 const pda = (seeds, pid = PROGRAM_ID) => PublicKey.findProgramAddressSync(seeds, pid)[0];
 const arPda = (seeds) => pda(seeds, ARCIUM_PROGRAM_ID);
 const readU128 = (buf, off) => buf.readBigUInt64LE(off) | (buf.readBigUInt64LE(off + 8) << 64n);
-const utf8 = (buf) => dec.decode(buf.subarray(0, Math.max(0, buf.indexOf(0) >= 0 ? buf.indexOf(0) : buf.length))).trim();
 
 function productState(seller, productIdHex) { return pda([enc.encode("product"), seller.toBytes(), hexBytes(productIdHex)]); }
 function purchaseState(product, purchaseIdHex) { return pda([enc.encode("purchase"), product.toBytes(), hexBytes(purchaseIdHex)]); }

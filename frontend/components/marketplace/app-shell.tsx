@@ -4,11 +4,7 @@ import { PropsWithChildren } from "react";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
 
-interface AppShellProps extends PropsWithChildren {
-  footer?: boolean;
-}
-
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children }: PropsWithChildren) {
   return (
     <div className="flex min-h-screen flex-col bg-black">
       {/* Top bar */}

@@ -7,7 +7,7 @@ The platform exposes four surfaces:
 - `Home` — landing page that routes users into the correct workflow.
 - `Explore` — searchable, filterable storefront of active listings.
 - `Launch` — seller workspace: encrypt file in-browser, upload to IPFS, publish on-chain with Arcium custody.
-- `Library` — wallet-gated hub: finalize delivery (seller), reveal and download (buyer), or revoke access.
+- `Library` — wallet-gated hub: finalize delivery (seller), reveal with frontend preview, download decrypted assets, or revoke access.
 
 Core flow:
 
@@ -17,7 +17,7 @@ Core flow:
 4. Buyer calls `purchase_product` on-chain.
 5. Seller calls `request_evaluate_and_seal` — this queues an Arcium computation that re-encrypts the content key under the buyer's delivery public key.
 6. Arcium callback writes the encrypted payload into `PurchaseState` and sets `arcium_delivery_ready = true`.
-7. Buyer reads the on-chain payload, decrypts locally, and downloads the original file.
+7. Buyer reads the on-chain payload, decrypts locally, previews the revealed asset in the frontend, and downloads when needed.
 
 ## Repository structure
 
@@ -176,7 +176,7 @@ The library page is the reveal hub backed by local browser state plus on-chain p
 
 - shows purchased items with delivery status
 - shows `Finalize delivery` only to the wallet that published the listing
-- shows `Reveal & download` only to the wallet that created the purchase
+- shows `Reveal` only to the wallet that created the purchase, then surfaces `Download` after a successful reveal
 - shows `Revoke access` only to the publishing wallet when the listing is revocable
 
 ## Contracts

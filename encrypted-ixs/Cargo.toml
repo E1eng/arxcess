@@ -9,5 +9,4 @@ crate-type = ["lib"]
 
 [dependencies]
 arcis = { workspace = true }
-blake3 = { workspace = true }
 sha2 = { workspace = true }

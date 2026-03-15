@@ -24,7 +24,7 @@ import { fetchOnchainProductStates } from "@/lib/solana/account-state";
 import { buildActivateProductTransaction, buildCreateProductTransaction, buildDepositProductKeyTransaction, buildStageProductArciumMaterialTransaction } from "@/lib/solana/arxcess";
 import { solToLamports } from "@/lib/solana/amounts";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
-import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
+import { isMissingSupabaseListingsTableError } from "../../lib/supabase/listings";
 import { type LocalProductListing, listStoredProducts, saveStoredProduct } from "@/lib/storage/marketplace";
 import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
 

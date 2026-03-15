@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { type LocalProductListing } from "@/lib/storage/marketplace";
-import { hasSupabaseListingConfig, isMissingSupabaseListingsTableError, listSupabaseListings, upsertSupabaseListing } from "@/lib/supabase/listings";
+import { hasSupabaseListingConfig, isMissingSupabaseListingsTableError, listSupabaseListings, upsertSupabaseListing } from "../../../lib/supabase/listings";
 
 export async function GET() {
   if (!hasSupabaseListingConfig()) {

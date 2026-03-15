@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { type LocalPurchaseIntent } from "@/lib/storage/marketplace";
-import { hasSupabasePurchaseConfig, isMissingSupabasePurchasesTableError, listSupabasePurchases, upsertSupabasePurchase } from "../../../lib/supabase/purchases";
+import { hasSupabasePurchaseConfig, isMissingSupabasePurchasesTableError, listSupabasePurchases, upsertSupabasePurchase } from "@/lib/supabase/purchases";
 
 export async function GET() {
   if (!hasSupabasePurchaseConfig()) {

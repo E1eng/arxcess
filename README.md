@@ -1,12 +1,13 @@
 # Arxcess
 
-> Encrypted digital goods marketplace on Solana + Arcium. Sellers publish files with confidential key custody handled by Arcium's MXE network. Buyers pay on-chain and receive content exclusively after Arcium computes and delivers a buyer-specific decryption payload. No seller involvement is required at reveal time — the delivery is cryptographically bound to the buyer.
+**Encrypted digital goods marketplace on Solana + Arcium.** Sellers never see the buyer’s decrypted content; Arcium MXE handles custody and delivery via verifiable confidential compute.
 
 ---
 
 ## Table of contents
 
 - [How it works](#how-it-works)
+- [Judge quick start](#judge-quick-start)
 - [Repository structure](#repository-structure)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
@@ -17,6 +18,7 @@
 - [Supabase sync](#supabase-sync)
 - [Verifying on-chain state](#verifying-on-chain-state)
 - [Development workflow](#development-workflow)
+- [Security & privacy notes](#security--privacy-notes)
 - [License](#license)
 
 ---
@@ -36,6 +38,25 @@ The core protocol separates encryption, custody, and delivery into distinct on-c
 | 7 | Buyer | Reads on-chain payload, decrypts with their delivery private key, previews and downloads in-browser |
 
 The seller never touches the buyer's decrypted content. Arcium's MXE network performs the re-encryption in a confidential compute environment — the result is cryptographically verifiable on-chain.
+
+### Architecture at a glance
+
+- **On-chain program** (Anchor): product lifecycle + purchase lifecycle + Arcium callbacks
+- **Confidential compute** (Arcium MXE): custody wrap + buyer-specific re-encrypt
+- **Client** (Next.js): Launch (seller), Explore (buyer), Library (reveal/delivery)
+- **Storage**: Pinata/IPFS for ciphertext + metadata; optional Supabase for shared listings/purchases; `localStorage` fallback
+- **Keys**: Seller content key never leaves browser; buyer delivery keypair auto-generated in-browser; Arcium wraps/unwraps without exposing plaintext
+
+### Judge quick start
+
+- **Run locally:** `npm install && npm run dev` → http://localhost:3000
+- **Env:** use `.env.example` as template; Pinata JWT required for Launch uploads; Supabase optional
+- **Test flow (two wallets):**
+  1) Wallet A (seller) → Launch → publish listing → wait custody ready
+  2) Wallet B (buyer) → Explore → buy listing (stores purchase intent)
+  3) Wallet A → Library → Finalize delivery (queues Arcium evaluate_and_seal)
+  4) Wallet B → Library → Reveal → Download (after `arcium_delivery_ready=true`)
+- **Verify:** open Publish/Delivery tx links in Library → Solana Explorer; see Arcium CPI + events
 
 ---
 
@@ -288,6 +309,17 @@ The script runs the full end-to-end flow:
 5. Decrypts on-chain payload and asserts the commitment hash matches original content
 
 A passing run is cryptographic proof that Arcium performed real confidential computation.
+
+---
+
+## Security & privacy notes
+
+- **Client-side encryption:** Content encrypted in-browser; seller content key never leaves the client.
+- **Confidential compute:** Arcium MXE performs custody/delivery under BLS-signed outputs; callbacks verified on-chain.
+- **Buyer-bound delivery:** Delivery payload is encrypted to the buyer’s delivery pubkey; unusable by others.
+- **Revocation:** `revoke_purchase` blocks future reveals when listing is marked revocable.
+- **Storage surface:** Ciphertext + metadata only on IPFS/Pinata; plaintext never stored server-side.
+- **Optional Supabase:** Holds only listing metadata + purchase intents (no plaintext keys/ciphertext); guarded by service role key in API routes.
 
 ---
 

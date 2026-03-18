@@ -11,20 +11,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:   "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
-  secondary: "border border-[color:var(--border2)] bg-[color:var(--surface2)] text-[color:var(--text)] hover:border-[#6B50FF]",
-  ghost:     "border border-[color:var(--border)] bg-transparent text-[color:var(--text2)] hover:bg-[color:var(--surface2)] hover:text-[color:var(--text)]",
-  cyan:      "border border-[color:var(--cyan)] bg-[color:var(--cyan)] text-black hover:opacity-90",
-  violet:    "border border-[#6B50FF] bg-[#6B50FF] text-white hover:bg-[#7B62FF] hover:border-[#7B62FF]",
-  danger:    "border border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.1)] text-[color:var(--red)] hover:bg-[rgba(239,68,68,0.18)]",
-  outline:   "border border-[#6B50FF] bg-transparent text-[#9B8FFF] hover:bg-[#6B50FF] hover:text-white"
+  primary:   "bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] hover:scale-[1.02] border border-transparent",
+  secondary: "border border-[#2e2e48] bg-[#1a1a2e] text-white hover:bg-[#2e2e48]",
+  ghost:     "border border-transparent bg-transparent text-[#8b8b9d] hover:text-white hover:bg-[#1a1a2e]",
+  cyan:      "border border-cyan-500/50 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20",
+  violet:    "bg-gradient-to-r from-[#6B50FF] to-[#8B5CF6] text-white shadow-[0_0_15px_rgba(107,80,255,0.4)] hover:scale-[1.02] border border-transparent",
+  danger:    "border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
+  outline:   "border border-purple-500/50 bg-transparent text-purple-400 hover:bg-purple-500/10"
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm:   "h-8 px-3 text-[11px] font-bold uppercase tracking-[0.06em]",
-  md:   "h-9 px-4 text-[12px] font-bold uppercase tracking-[0.08em]",
-  lg:   "h-11 px-6 text-[12px] font-bold uppercase tracking-[0.1em]",
-  icon: "h-8 w-8 px-0 text-sm"
+  sm:   "h-9 px-4 text-[11px] font-bold uppercase tracking-wider rounded-lg",
+  md:   "h-10 px-5 text-[12px] font-bold uppercase tracking-wider rounded-lg",
+  lg:   "h-12 px-8 text-[13px] font-bold uppercase tracking-wider rounded-xl",
+  icon: "h-9 w-9 px-0 text-sm rounded-lg"
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -35,7 +35,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B50FF]/50 disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex items-center justify-center gap-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B50FF]/50 disabled:pointer-events-none disabled:opacity-50",
         variantClasses[variant],
         sizeClasses[size],
         className
@@ -43,7 +43,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       {...props}
     >
-      {loading ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" /> : null}
+      {loading ? <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" /> : null}
       <span>{loading ? "Loading..." : children}</span>
     </button>
   );

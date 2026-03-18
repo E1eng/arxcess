@@ -729,93 +729,94 @@ export function PurchasesList() {
     <div className="flex flex-col gap-4">
 
       {/* ── Page header ──────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-[28px] border border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(107,80,255,0.18),rgba(12,21,37,0.98)_54%,rgba(6,182,212,0.12))] shadow-[0_24px_80px_rgba(3,7,18,0.45)]">
-        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between lg:p-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] border border-white/10 bg-[rgba(5,10,20,0.42)] text-[#9B8FFF] backdrop-blur">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#9B8FFF]">Library</p>
-              <h1 className="mt-1 font-head text-[22px] font-bold tracking-[-0.03em] text-white sm:text-[28px]">Assets and history in one place.</h1>
-              <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[color:var(--text2)]">See assets that are ready to access, open purchase history, and review transaction trails without stacking too much detail on screen.</p>
-            </div>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#5e5e73]">Library</p>
+            <h1 className="mt-1 font-head text-[28px] font-bold tracking-tight text-white sm:text-[32px]">Assets and history in one place.</h1>
+            <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-[#8b8b9d]">See assets that are ready to access, open purchase history, and review transaction trails without stacking too much detail on screen.</p>
           </div>
-          <div className="flex flex-col items-start gap-3 lg:items-end">
+          <div className="flex items-center gap-3">
             <WalletAddress address={connectedWallet} shortened />
-            <div className="inline-flex rounded-[18px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.78)] p-1 backdrop-blur">
-              {([
-                { id: "assets", label: `Assets (${filteredCards.length})` },
-                { id: "history", label: `History (${historyCards.length})` }
-              ] as { id: LibraryTab; label: string }[]).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-[14px] px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition ${activeTab === tab.id ? "bg-[#6B50FF] text-white shadow-[0_10px_30px_rgba(107,80,255,0.28)]" : "text-[color:var(--text2)] hover:text-white"}`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
           </div>
+        </div>
+
+        {/* ── Stats bar ────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[
+            { label: "Total assets", value: <span>{purchaseCards.length}</span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> },
+            { label: "Total spent", value: <span className="inline-flex items-baseline gap-1.5"><span className="text-[24px] font-bold text-white">{totalSpentSol.toFixed(3)}</span><span className="text-[11px] font-bold text-purple-400">SOL</span></span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg> },
+            { label: "Delivered", value: <span>{deliveredCount}</span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.64-5.64"/></svg> }
+          ].map(({ label, value, icon }) => (
+            <div key={label} className="flex flex-col gap-4 rounded-2xl border border-[#1a1a2e] bg-gradient-to-br from-[#0b0b12] to-[#131320] p-5">
+              <div className="flex items-center justify-between text-[#5e5e73]">
+                <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
+                {icon}
+              </div>
+              <div className="font-mono text-[24px] font-bold text-white">{value}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── Stats bar ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {[
-          { label: "Total assets", value: <span>{purchaseCards.length}</span> },
-          { label: "Total spent", value: <span className="inline-flex items-end gap-1.5"><span>{totalSpentSol.toFixed(3)}</span><span className="pb-0.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)]">SOL</span></span> },
-          { label: "Delivered", value: <span>{deliveredCount}</span> }
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-[22px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.84)] px-4 py-3.5 shadow-[0_18px_40px_rgba(3,7,18,0.28)]">
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--text3)]">{label}</span>
-            <span className="mt-1.5 block font-head text-[22px] font-bold text-white">{value}</span>
+      {/* ── Tabs & Filters ───────────────────────────────────── */}
+      <div className="mt-2 flex flex-col gap-4 border-b border-[#1a1a2e] pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          {([
+            { id: "assets", label: "Assets" },
+            { id: "history", label: "History" }
+          ] as { id: LibraryTab; label: string }[]).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-lg px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider transition-all ${activeTab === tab.id ? "bg-purple-500/10 text-purple-400 border border-purple-500/30" : "bg-transparent text-[#5e5e73] hover:text-white"}`}
+            >
+              {tab.label} {tab.id === "assets" ? `(${filteredCards.length})` : `(${historyCards.length})`}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "assets" && (
+          <div className="flex flex-wrap gap-2">
+            {(["all", "waiting", "delivered", "revoked"] as StatusFilter[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setStatusFilter(f)}
+                className={`rounded-lg border px-4 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                  statusFilter === f
+                    ? "border-purple-500/50 bg-purple-500/10 text-purple-400"
+                    : "border-[#2e2e48] bg-transparent text-[#8b8b9d] hover:border-purple-500/30 hover:text-white"
+                }`}
+              >
+                {f}
+                {f === "all" ? ` (${purchaseCards.length})` : null}
+              </button>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       {/* ── Callouts ─────────────────────────────────────────── */}
       {isArciumFinalizeBlocked ? (
-        <div className="rounded-[20px] border border-[color:rgba(107,80,255,0.24)] bg-[rgba(13,16,27,0.84)] px-4 py-3 text-[12px] text-[color:var(--text2)]">
-          <span className="font-bold uppercase tracking-[0.12em] text-[#9B8FFF]">Finalize unavailable</span>
-          <p className="mt-1 leading-6">{getArciumFrontendBlockMessage("finalize")}</p>
-        </div>
-      ) : null}
-
-      {/* ── Status filter pills ───────────────────────────────── */}
-      {activeTab === "assets" ? (
-        <div className="flex flex-wrap gap-1.5">
-          {(["all", "waiting", "delivered", "revoked"] as StatusFilter[]).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setStatusFilter(f)}
-              className={`rounded-full border px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition ${
-                statusFilter === f
-                  ? "border-[#6B50FF] bg-[#6B50FF] text-white shadow-[0_10px_30px_rgba(107,80,255,0.24)]"
-                  : "border-[color:var(--border2)] bg-transparent text-[color:var(--text2)] hover:border-white hover:text-white"
-              }`}
-            >
-              {f}
-              {f === "all" ? ` (${purchaseCards.length})` : null}
-            </button>
-          ))}
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-400">
+          <span className="font-bold uppercase tracking-wider">Finalize unavailable</span>
+          <p className="mt-1 leading-relaxed opacity-90">{getArciumFrontendBlockMessage("finalize")}</p>
         </div>
       ) : null}
 
       {/* ── Purchase list ─────────────────────────────────────── */}
       {activeTab === "assets" ? (
-      <div className="flex flex-col gap-px border border-[color:var(--border)] bg-[color:var(--border)]">
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {filteredCards.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 bg-[color:var(--surface)] p-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-[color:var(--border2)] bg-[rgba(5,10,20,0.6)] text-[color:var(--text3)]">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <div className="col-span-full flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2e2e48] bg-[#0b0b12] p-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1a1a2e] text-[#5e5e73]">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             </div>
             <div>
-              <p className="text-[12px] font-bold text-white">{purchaseCards.length === 0 ? "No purchases yet" : "No items match this filter"}</p>
-              <p className="mt-1 max-w-xs text-[12px] text-[color:var(--text2)]">{purchaseCards.length === 0 ? "Complete checkout from Explore to see items here." : "Try switching to a different filter."}</p>
+              <p className="text-[14px] font-bold text-white">{purchaseCards.length === 0 ? "No purchases yet" : "No items match this filter"}</p>
+              <p className="mt-1 max-w-sm text-[13px] text-[#8b8b9d]">{purchaseCards.length === 0 ? "Complete checkout from Explore to see items here." : "Try switching to a different filter."}</p>
             </div>
           </div>
         ) : (
@@ -845,227 +846,181 @@ export function PurchasesList() {
                   : "Waiting for seller delivery.";
 
             return (
-              <div key={purchase.purchaseIdHex} className="flex flex-col gap-3 bg-[color:var(--surface)] px-5 py-5 transition-colors hover:bg-[color:var(--surface2)]">
-                <div className="flex items-start justify-between gap-4">
-                  {/* Left: icon + content */}
-                  <div className="flex min-w-0 flex-1 gap-4">
-                    <div className="flex h-[72px] w-[72px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-[22px] border border-[#2e254f] bg-[linear-gradient(180deg,#151225,#100d1d)] text-[#9B8FFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                      <CategoryIcon category={normalizedCategory} className="h-7 w-7" />
-                      <span className="text-[7px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">{CATEGORY_LABELS[normalizedCategory]}</span>
+              <div key={purchase.purchaseIdHex} className="group flex flex-col overflow-hidden rounded-2xl border border-[#1a1a2e] bg-[#0b0b12] transition-all hover:-translate-y-1 hover:border-purple-500/30 hover:shadow-[0_8px_30px_rgba(107,80,255,0.1)]">
+                
+                {/* Card Header (Category & Badges) */}
+                <div className="flex items-center justify-between border-b border-[#1a1a2e] bg-gradient-to-r from-[#131320] to-transparent px-5 py-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
+                      <CategoryIcon category={normalizedCategory} className="h-4 w-4" />
                     </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-                      </div>
-                      <h3 className="mt-2 truncate font-head text-[17px] font-bold leading-tight text-white">{product?.title ?? "Unknown listing"}</h3>
-                      <p className="mt-1.5 text-[12px] leading-5 text-[color:var(--text2)]">{statusHint}</p>
-                      <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 border-t border-[color:var(--border)] pt-4">
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Reveals</p>
-                          <p className="mt-1 font-mono text-[13px] font-bold text-white">{onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Purchased</p>
-                          <p className="mt-1 text-[12px] text-[color:var(--text2)]">{formatOptionalDateTime(purchase.createdAt) ?? "Unknown"}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Expires</p>
-                          <p className="mt-1 text-[12px] text-[color:var(--text2)]">{formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"}</p>
-                        </div>
-                      </div>
-                    </div>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#8b8b9d]">{CATEGORY_LABELS[normalizedCategory]}</span>
                   </div>
-                  {/* Right: price panel */}
-                  <div className="shrink-0 text-right">
-                    <p className="inline-flex items-baseline gap-1 font-mono text-[14px] font-bold text-white">
-                      <span>{Number(purchase.amountSol).toFixed(3)}</span>
-                      <span className="text-[11px] text-[color:var(--text2)]">SOL</span>
-                    </p>
+                  <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+                </div>
+
+                {/* Card Body */}
+                <div className="flex-1 p-5">
+                  <h3 className="truncate font-head text-[18px] font-bold leading-tight text-white group-hover:text-purple-400 transition-colors">{product?.title ?? "Unknown listing"}</h3>
+                  <p className="mt-2 text-[13px] leading-relaxed text-[#8b8b9d] line-clamp-2">{statusHint}</p>
+                  
+                  {/* Detail list rows */}
+                  <div className="mt-5 flex flex-col">
+                    {[
+                      ["Reveals", onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`],
+                      ["Price", `${Number(purchase.amountSol).toFixed(3)} SOL`],
+                      ["Purchased", formatOptionalDateTime(purchase.createdAt) ?? "Unknown"],
+                      ["Expires", formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"]
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between border-b border-[#1a1a2e] py-3 last:border-0">
+                        <span className="text-[12px] font-medium text-[#5e5e73]">{label}</span>
+                        <span className="text-[12px] font-bold text-white">{value}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <details className="group mt-1 overflow-hidden rounded-[18px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.45)]">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
-                    <div className="flex items-center gap-2">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B50FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#9B8FFF]">Transaction details</p>
+                {/* Card Footer (Actions) */}
+                <div className="border-t border-[#1a1a2e] bg-[#131320] p-4">
+                  <div className="flex flex-col gap-3">
+                    {canReveal || canFinalize || canRevoke ? (
+                      <div className="flex flex-wrap gap-2">
+                        {canFinalize ? (
+                          <button type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={isBusy} className="flex-1 rounded-lg border border-[#2e2e48] bg-[#1a1a2e] px-4 py-2 text-[12px] font-bold text-white transition-colors hover:bg-[#2e2e48] disabled:opacity-50">
+                            {isBusy ? "Finalizing..." : "Finalize delivery"}
+                          </button>
+                        ) : null}
+                        {canReveal ? (
+                          <button type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 px-4 py-2 text-[12px] font-bold text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-all hover:scale-[1.02] disabled:opacity-50">
+                            {isBusy ? "Revealing..." : revealedAsset ? "Reveal again" : "Reveal"}
+                          </button>
+                        ) : null}
+                        {canRevoke ? (
+                          <button type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={isBusy} className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-[12px] font-bold text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50">
+                            {isBusy ? "Revoking..." : "Revoke"}
+                          </button>
+                        ) : null}
                       </div>
-                    </div>
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--border2)] text-[color:var(--text2)] transition group-hover:border-white group-hover:text-white">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                    </span>
-                  </summary>
-                  <div className="grid gap-3 border-t border-[color:var(--border)] p-4 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Purchase tx</span>
-                        <Badge variant={purchase.transactionSignature ? "green" : "gray"}>{purchase.transactionSignature ? "Stored" : "Missing"}</Badge>
-                      </div>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">
-                        {purchase.transactionSignature ? (
-                          <a href={explorerTxUrl(purchase.transactionSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">
-                            {truncateValue(purchase.transactionSignature, 10, 10)}
-                          </a>
-                        ) : "Purchase signature not stored."}
-                      </div>
-                      <p className="mt-2 text-[11px] text-[color:var(--text3)]">This is the original buyer payment transaction used to create the purchase on-chain.</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Publish tx</span>
-                        <Badge variant={publishProofLabel === "Stored" ? "green" : publishProofLabel === "Legacy" ? "cyan" : "gray"}>{publishProofLabel}</Badge>
-                      </div>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">
-                        {product?.publishSignature ? (
-                          <a href={explorerTxUrl(product.publishSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">
-                            {truncateValue(product.publishSignature, 10, 10)}
-                          </a>
-                        ) : onchainProduct?.arciumCustodyReady || purchase.transactionSignature ? "Legacy listing / publish tx not stored" : "Publish transaction not available yet."}
-                      </div>
-                      <p className="mt-2 text-[11px] text-[color:var(--text3)]">
-                        {onchainProduct?.arciumCustodyReady && !hasStoredPublishQueueTx
-                          ? "Listing custody is already settled on-chain, but the original publish signature was never persisted."
-                          : product?.publishSignature
-                            ? "This is the listing publish transaction. Buyer reveal depends on the delivery row, not this row."
-                            : "This row tracks the listing publish transaction, not buyer delivery readiness."}
-                      </p>
-                    </div>
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Delivery tx</span>
-                        <Badge variant={deliveryProofLabel === "Settled" ? "green" : deliveryProofLabel === "Queued" ? "violet" : "gray"}>{deliveryProofLabel}</Badge>
-                      </div>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">
-                        {purchase.finalizeSignature ? (
-                          <a href={explorerTxUrl(purchase.finalizeSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">
-                            {truncateValue(purchase.finalizeSignature, 10, 10)}
-                          </a>
-                        ) : "Delivery transaction not sent yet."}
-                      </div>
-                      <p className="mt-2 text-[11px] text-[color:var(--text3)]">This is the seller delivery transaction. Reveal becomes available after this delivery settles on-chain.</p>
-                    </div>
-                  </div>
-                </details>
+                    ) : null}
 
-                {canReveal || canFinalize || canRevoke ? (
-                  <div className="flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
-                    {canFinalize ? (
-                      <Button variant="secondary" size="sm" type="button" onClick={() => void finalizeDelivery(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
-                        {isBusy ? "Finalizing..." : "Finalize delivery"}
-                      </Button>
-                    ) : null}
-                    {canReveal ? (
-                      <Button variant="violet" size="sm" type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
-                        {isBusy ? "Revealing..." : revealedAsset ? "Reveal again" : "Reveal"}
-                      </Button>
-                    ) : null}
-                    {canRevoke ? (
-                      <Button variant="danger" size="sm" type="button" onClick={() => void revokePurchase(purchase.purchaseIdHex)} disabled={isBusy} loading={isBusy}>
-                        {isBusy ? "Revoking..." : "Revoke"}
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {revealedAsset ? (
-                  <div className="overflow-hidden rounded-[20px] border border-[color:var(--border)] bg-[rgba(5,10,20,0.45)]">
-                    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border)] px-3 py-2">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#9B8FFF]">Revealed preview</p>
-                        <p className="mt-1 text-[11px] text-[color:var(--text2)]">Rendered locally from the decrypted frontend payload.</p>
-                      </div>
-                      <Button variant="secondary" size="sm" type="button" onClick={() => downloadRevealedAsset(revealedAsset)}>
-                        Download
-                      </Button>
-                    </div>
-                    {revealedAsset.mimeType.startsWith("image/") ? (
-                      <div className="bg-black/30 p-3">
-                        <div className="relative mx-auto h-[360px] w-full overflow-hidden rounded-[16px] lg:h-[420px]">
-                          <Image src={revealedAsset.objectUrl} alt={product?.title ?? "Revealed asset"} fill unoptimized className="object-contain" />
+                    {/* Tx Details Accordion */}
+                    <details className="group overflow-hidden rounded-lg border border-[#1a1a2e] bg-[#0b0b12]">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 [&::-webkit-details-marker]:hidden">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#5e5e73] group-hover:text-purple-400 transition-colors">Transaction Details</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#5e5e73] transition-transform group-open:rotate-180"><polyline points="6 9 12 15 18 9"/></svg>
+                      </summary>
+                      <div className="grid gap-2 border-t border-[#1a1a2e] bg-[#131320] p-3 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#5e5e73]">Purchase Tx:</span>
+                          {purchase.transactionSignature ? (
+                            <a href={explorerTxUrl(purchase.transactionSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">
+                              {truncateValue(purchase.transactionSignature, 8, 8)}
+                            </a>
+                          ) : <span className="text-[#8b8b9d]">Not stored</span>}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#5e5e73]">Publish Tx:</span>
+                          {product?.publishSignature ? (
+                            <a href={explorerTxUrl(product.publishSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">
+                              {truncateValue(product.publishSignature, 8, 8)}
+                            </a>
+                          ) : <span className="text-[#8b8b9d]">Not stored</span>}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#5e5e73]">Delivery Tx:</span>
+                          {purchase.finalizeSignature ? (
+                            <a href={explorerTxUrl(purchase.finalizeSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">
+                              {truncateValue(purchase.finalizeSignature, 8, 8)}
+                            </a>
+                          ) : <span className="text-[#8b8b9d]">Not sent</span>}
                         </div>
                       </div>
-                    ) : revealedAsset.mimeType.startsWith("video/") ? (
-                      <div className="bg-black/30 p-3">
-                        <video src={revealedAsset.objectUrl} controls className="max-h-[420px] w-full rounded-[16px] bg-black object-contain" />
+                    </details>
+                  </div>
+                </div>
+
+                {/* Revealed Asset Preview */}
+                {revealedAsset ? (
+                  <div className="border-t border-[#1a1a2e] bg-black">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Revealed Preview</span>
+                      <button onClick={() => downloadRevealedAsset(revealedAsset)} className="text-[12px] font-bold text-white hover:text-purple-400 transition-colors">
+                        Download ↓
+                      </button>
+                    </div>
+                    {revealedAsset.mimeType.startsWith("image/") ? (
+                      <div className="relative h-[240px] w-full border-t border-[#1a1a2e]">
+                        <Image src={revealedAsset.objectUrl} alt={product?.title ?? "Revealed asset"} fill unoptimized className="object-contain p-2" />
                       </div>
-                    ) : revealedAsset.mimeType.startsWith("audio/") ? (
-                      <div className="p-4">
-                        <audio src={revealedAsset.objectUrl} controls className="w-full" />
+                    ) : revealedAsset.mimeType.startsWith("video/") ? (
+                      <div className="border-t border-[#1a1a2e] p-2">
+                        <video src={revealedAsset.objectUrl} controls className="h-full w-full rounded-lg bg-black" />
                       </div>
                     ) : (
-                      <div className="p-4">
-                        <p className="text-[12px] text-[color:var(--text2)]">Preview is not available for this file type yet. Use Download to open the decrypted file.</p>
+                      <div className="border-t border-[#1a1a2e] p-4 text-center text-[12px] text-[#8b8b9d]">
+                        Preview unavailable. Please download the file.
                       </div>
                     )}
                   </div>
                 ) : null}
+
               </div>
             );
           })
         )}
       </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {historyCards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-[color:var(--border)] bg-[color:var(--surface)] p-16 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-[color:var(--border2)] bg-[rgba(5,10,20,0.6)] text-[color:var(--text3)]">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2e2e48] bg-[#0b0b12] p-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1a1a2e] text-[#5e5e73]">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               </div>
               <div>
-                <p className="text-[12px] font-bold text-white">No history yet</p>
-                <p className="mt-1 max-w-xs text-[12px] text-[color:var(--text2)]">Purchase activity will appear here after checkout.</p>
+                <p className="text-[14px] font-bold text-white">No history yet</p>
+                <p className="mt-1 max-w-sm text-[13px] text-[#8b8b9d]">Purchase activity will appear here after checkout.</p>
               </div>
             </div>
           ) : (
             historyCards.map(({ purchase, product }) => {
               const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
-              const onchainProduct = product ? onchainProductStates[product.productIdHex] : undefined;
               const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
               const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Queued" : "Waiting";
               const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : effectiveStatus === "pending_arcium" ? "violet" : "amber";
-              const publishHistoryLabel = onchainProduct?.arciumCustodyReady || Boolean(purchase.transactionSignature) ? (product?.publishSignature ? "Stored" : "Legacy") : product?.publishSignature ? "Stored" : "Unavailable";
 
               return (
-                <details key={purchase.purchaseIdHex} className="group overflow-hidden rounded-[18px] border border-[color:var(--border)] bg-[color:var(--surface)] transition-colors hover:bg-[color:var(--surface2)]">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#2e254f] bg-[linear-gradient(180deg,#151225,#100d1d)] text-[#9B8FFF]">
+                <details key={purchase.purchaseIdHex} className="group overflow-hidden rounded-xl border border-[#1a1a2e] bg-[#0b0b12] transition-colors hover:border-purple-500/30">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 [&::-webkit-details-marker]:hidden">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
                         <CategoryIcon category={normalizeMarketplaceCategory(product?.category ?? "other")} className="h-5 w-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                           <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+                          <span className="text-[11px] text-[#5e5e73]">{formatOptionalDateTime(purchase.createdAt) ?? "Unknown date"}</span>
                         </div>
-                        <h3 className="mt-1 truncate font-head text-[14px] font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
-                        <p className="mt-0.5 font-mono text-[11px] text-[color:var(--text2)]">{Number(purchase.amountSol).toFixed(3)} SOL · {formatOptionalDateTime(purchase.createdAt) ?? "Unknown"}</p>
+                        <h3 className="truncate text-[15px] font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
+                        <p className="mt-1 font-mono text-[12px] text-[#8b8b9d]">{Number(purchase.amountSol).toFixed(3)} SOL</p>
                       </div>
                     </div>
-                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--border2)] text-[color:var(--text2)] transition group-open:rotate-180 group-hover:border-white group-hover:text-white">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a1a2e] text-[#5e5e73] transition-transform group-open:rotate-180 group-hover:text-white">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </span>
                   </summary>
-                  <div className="grid gap-3 border-t border-[color:var(--border)] p-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Purchase tx</p>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">{purchase.transactionSignature ? <a href={explorerTxUrl(purchase.transactionSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">{truncateValue(purchase.transactionSignature, 10, 10)}</a> : "Not stored"}</div>
-                      <p className="mt-2 text-[11px] text-[color:var(--text3)]">Original buyer payment transaction.</p>
+                  
+                  <div className="grid gap-2 border-t border-[#1a1a2e] bg-[#131320] p-4 text-[12px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#5e5e73]">Purchase Tx</span>
+                      {purchase.transactionSignature ? <a href={explorerTxUrl(purchase.transactionSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">{truncateValue(purchase.transactionSignature, 12, 12)}</a> : <span className="text-[#8b8b9d]">Not stored</span>}
                     </div>
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Publish tx</p>
-                        <Badge variant={publishHistoryLabel === "Stored" ? "green" : publishHistoryLabel === "Legacy" ? "cyan" : "gray"}>{publishHistoryLabel}</Badge>
-                      </div>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">{product?.publishSignature ? <a href={explorerTxUrl(product.publishSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">{truncateValue(product.publishSignature, 10, 10)}</a> : onchainProduct?.arciumCustodyReady ? "Legacy listing already settled" : "Not stored"}</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#5e5e73]">Publish Tx</span>
+                      {product?.publishSignature ? <a href={explorerTxUrl(product?.publishSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">{truncateValue(product.publishSignature, 12, 12)}</a> : <span className="text-[#8b8b9d]">Not stored</span>}
                     </div>
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Delivery tx</p>
-                      <div className="mt-2 text-[11px] text-[color:var(--text2)]">{purchase.finalizeSignature ? <a href={explorerTxUrl(purchase.finalizeSignature)} target="_blank" rel="noreferrer" className="font-mono text-[#9B8FFF] underline-offset-2 hover:underline">{truncateValue(purchase.finalizeSignature, 10, 10)}</a> : "Not sent"}</div>
-                      <p className="mt-2 text-[11px] text-[color:var(--text3)]">Seller delivery transaction for this purchase.</p>
-                    </div>
-                    <div className="rounded-[16px] border border-[color:var(--border)] bg-[rgba(12,21,37,0.82)] p-3">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--text3)]">Purchase id</p>
-                      <div className="mt-2 font-mono text-[11px] text-[color:var(--text2)]">{truncateValue(purchase.purchaseIdHex, 12, 12)}</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#5e5e73]">Delivery Tx</span>
+                      {purchase.finalizeSignature ? <a href={explorerTxUrl(purchase.finalizeSignature)} target="_blank" rel="noreferrer" className="font-mono text-purple-400 hover:text-purple-300">{truncateValue(purchase.finalizeSignature, 12, 12)}</a> : <span className="text-[#8b8b9d]">Not sent</span>}
                     </div>
                   </div>
                 </details>

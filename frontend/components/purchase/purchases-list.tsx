@@ -26,6 +26,7 @@ import { fetchOnchainProductStates, fetchOnchainPurchaseStates, type DecodedProd
 import { buildConsumeAccessTransaction, buildRequestEvaluateAndSealTransaction, buildRevokePurchaseTransaction } from "@/lib/solana/arxcess";
 import { type LocalPurchaseIntent, getStoredPurchase, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { formatOptionalDateTime, truncateValue } from "@/lib/utils/format";
+import { SolLogo } from "@/components/ui/SolLogo";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -868,13 +869,13 @@ export function PurchasesList() {
                   <div className="mt-5 flex flex-col">
                     {[
                       ["Reveals", onchain ? `${onchain.accessCount}/${onchain.maxAccessCount}` : `${purchase.accessCount}/${purchase.maxAccessCount}`],
-                      ["Price", `${Number(purchase.amountSol).toFixed(3)} SOL`],
+                      ["Price", `${Number(purchase.amountSol).toFixed(3)}`],
                       ["Purchased", formatOptionalDateTime(purchase.createdAt) ?? "Unknown"],
                       ["Expires", formatOptionalDateTime(onchain?.expiresAt ? onchain.expiresAt * 1000 : purchase.expiresAt) ?? "Never"]
                     ].map(([label, value]) => (
                       <div key={label} className="flex items-center justify-between border-b border-[#1a1a2e] py-3 last:border-0">
                         <span className="text-[12px] font-medium text-[#5e5e73]">{label}</span>
-                        <span className="text-[12px] font-bold text-white">{value}</span>
+                        <span className="flex items-center gap-1 text-[12px] font-bold text-white">{label === "Price" ? <><span>{value}</span><SolLogo size={11} className="text-purple-400" /></> : value}</span>
                       </div>
                     ))}
                   </div>
@@ -1001,7 +1002,7 @@ export function PurchasesList() {
                           <span className="text-[11px] text-[#5e5e73]">{formatOptionalDateTime(purchase.createdAt) ?? "Unknown date"}</span>
                         </div>
                         <h3 className="truncate text-[15px] font-bold text-white">{product?.title ?? "Unknown listing"}</h3>
-                        <p className="mt-1 font-mono text-[12px] text-[#8b8b9d]">{Number(purchase.amountSol).toFixed(3)} SOL</p>
+                        <p className="mt-1 flex items-center gap-1 font-mono text-[12px] text-[#8b8b9d]">{Number(purchase.amountSol).toFixed(3)}<SolLogo size={10} className="text-[#8b8b9d]" /></p>
                       </div>
                     </div>
                     <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a1a2e] text-[#5e5e73] transition-transform group-open:rotate-180 group-hover:text-white">

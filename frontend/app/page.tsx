@@ -11,60 +11,60 @@ export default function HomePage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-6">
-        {/* ── Main 2-col: left hero, right hash panels ─────── */}
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        {/* ── Hero + panels stacked top-bottom ─────── */}
+        <div className="flex flex-col gap-6">
           
-          {/* Left — hero */}
-          <div className="relative flex flex-col justify-between gap-10 overflow-hidden rounded-2xl border border-[#1a1a2e] bg-[#0b0b12] p-8 lg:p-12">
+          {/* Hero */}
+          <div className="relative flex flex-col gap-8 overflow-hidden rounded-2xl border border-[#1a1a2e] bg-[#0b0b12] p-8 lg:p-12">
             {/* Background decorative glow */}
             <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-purple-500/10 blur-[80px]" />
             <div className="absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-blue-500/5 blur-[80px]" />
 
-            <div className="relative z-10 flex flex-col gap-6">
-              {/* Status badges */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-purple-300">
-                  Arxcess on Solana Devnet
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulseSoft" />
-                  Active
-                </span>
+            <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex flex-col gap-6">
+                {/* Status badges */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                    Arxcess on Solana Devnet
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulseSoft" />
+                    Active
+                  </span>
+                </div>
+
+                {/* Title */}
+                <h1 className="font-head text-4xl font-bold leading-[1.1] tracking-tight text-white lg:text-[52px]">
+                  Encrypted Digital Goods on Solana.
+                </h1>
+
+                {/* Description */}
+                <p className="max-w-[56ch] text-[15px] leading-relaxed text-[#8b8b9d]">
+                  Sell any digital file. Buyers only decrypt after payment is confirmed on-chain.
+                  Zero trust required — access policies enforced entirely via Arcium on Solana.
+                </p>
               </div>
 
-              {/* Title */}
-              <h1 className="font-head text-4xl font-bold leading-[1.1] tracking-tight text-white lg:text-[52px]">
-                Encrypted <br />
-                Digital Goods on <br />
-                Solana.
-              </h1>
-
-              {/* Description */}
-              <p className="max-w-[42ch] text-[15px] leading-relaxed text-[#8b8b9d]">
-                Sell any digital file. Buyers only decrypt after payment is confirmed on-chain.
-                Zero trust required — access policies enforced entirely via Arcium on Solana.
-              </p>
-            </div>
-
-            {/* CTAs */}
-            <div className="relative z-10 flex flex-wrap gap-4 pt-4">
-              <Link
-                href={"/explore" as any}
-                className="inline-flex h-12 items-center justify-center rounded-lg bg-gradient-to-r from-[#6B50FF] to-[#8B5CF6] px-8 text-[12px] font-bold uppercase tracking-[0.1em] text-white shadow-[0_0_20px_rgba(107,80,255,0.3)] transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(107,80,255,0.5)]"
-              >
-                Browse products
-              </Link>
-              <Link
-                href={"/launch" as any}
-                className="inline-flex h-12 items-center justify-center rounded-lg border border-[#2e2e48] bg-[#131320] px-8 text-[12px] font-bold uppercase tracking-[0.1em] text-[#a1a1aa] transition-all hover:border-[#6B50FF] hover:text-white"
-              >
-                Publish a product
-              </Link>
+              {/* CTAs */}
+              <div className="flex flex-wrap gap-4 shrink-0">
+                <Link
+                  href={"/explore" as any}
+                  className="inline-flex h-12 items-center justify-center rounded-lg bg-gradient-to-r from-[#6B50FF] to-[#8B5CF6] px-8 text-[12px] font-bold uppercase tracking-[0.1em] text-white shadow-[0_0_20px_rgba(107,80,255,0.3)] transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(107,80,255,0.5)]"
+                >
+                  Browse products
+                </Link>
+                <Link
+                  href={"/launch" as any}
+                  className="inline-flex h-12 items-center justify-center rounded-lg border border-[#2e2e48] bg-[#131320] px-8 text-[12px] font-bold uppercase tracking-[0.1em] text-[#a1a1aa] transition-all hover:border-[#6B50FF] hover:text-white"
+                >
+                  Publish a product
+                </Link>
+              </div>
             </div>
           </div>
 
-          {/* Right — hash section panels */}
-          <div className="flex flex-col gap-4">
+          {/* Info panels — 3 columns on lg */}
+          <div className="grid gap-4 lg:grid-cols-3">
 
             {/* #0.1 Description */}
             <div className="flex flex-col overflow-hidden rounded-2xl border border-[#1a1a2e] bg-[#0b0b12]">

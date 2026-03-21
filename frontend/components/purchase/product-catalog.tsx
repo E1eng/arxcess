@@ -18,6 +18,7 @@ import { buildPurchaseTransaction } from "@/lib/solana/arxcess";
 import { type LocalProductListing, type LocalPurchaseIntent, saveStoredPurchase } from "@/lib/storage/marketplace";
 import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { formatBytes, formatLicenseDuration } from "@/lib/utils/format";
+import { SolLogo } from "@/components/ui/SolLogo";
 
 const CATEGORIES = MARKETPLACE_CATEGORIES;
 type SortKey = "default" | "price_asc" | "price_desc";
@@ -265,7 +266,7 @@ export function ProductCatalog() {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#5e5e73]">Floor Price</p>
                 <div className="mt-1 flex items-baseline gap-1.5">
                   <span className="font-mono text-[24px] font-bold text-white">{summary.floorPrice === null ? "—" : summary.floorPrice.toFixed(3)}</span>
-                  {summary.floorPrice === null ? null : <span className="font-mono text-[11px] font-bold text-purple-400">SOL</span>}
+                  {summary.floorPrice === null ? null : <SolLogo size={13} className="text-purple-400" />}
                 </div>
                 <p className="mt-0.5 text-[11px] text-[#8b8b9d]">Lowest active price.</p>
               </div>
@@ -427,7 +428,7 @@ export function ProductCatalog() {
                       <p className="text-[10px] font-bold uppercase tracking-widest text-[#5e5e73]">Price</p>
                       <div className="mt-0.5 flex items-baseline gap-1.5">
                         <span className="font-mono text-[20px] font-bold text-white">{Number(product.priceSol).toFixed(3)}</span>
-                        <span className="font-mono text-[11px] font-bold text-purple-400">SOL</span>
+                        <SolLogo size={13} className="text-purple-400" />
                       </div>
                     </div>
                     <button

@@ -27,6 +27,7 @@ import { confirmTransactionOrThrow } from "@/lib/solana/transactions";
 import { isMissingSupabaseListingsTableError } from "@/lib/supabase/listings";
 import { type LocalProductListing, listStoredProducts, saveStoredProduct } from "@/lib/storage/marketplace";
 import { formatBytes, formatLicenseDuration, truncateValue } from "@/lib/utils/format";
+import { SolLogo } from "@/components/ui/SolLogo";
 
 const initialForm = {
   title: "",
@@ -818,14 +819,14 @@ export function SellerWorkbench() {
               <div className="mt-4 flex flex-col">
                 {[
                   ["Category", CATEGORY_LABELS[normalizedCategory]],
-                  ["Price", `${form.priceSol || "0.00"} SOL`],
+                  ["Price", form.priceSol || "0.00"],
                   ["Access window", formatLicenseDuration(Number(form.licenseDurationDays || 0) * 86400)],
                   ["Reveal limit", `${form.maxAccessCount}×`],
                   ["Revocable", form.revocable ? "Yes" : "No"]
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between border-b border-[#1a1a2e] py-3.5 last:border-0">
                     <span className="text-[12px] font-medium text-[#5e5e73]">{label}</span>
-                    <span className="text-[12px] font-bold text-white">{value}</span>
+                    <span className="flex items-center gap-1 text-[12px] font-bold text-white">{label === "Price" ? <><span>{value}</span><SolLogo size={11} className="text-purple-400" /></> : value}</span>
                   </div>
                 ))}
               </div>

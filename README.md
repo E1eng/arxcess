@@ -563,10 +563,11 @@ This project was built as a submission for the **Private Data Transfer & Access 
 
 ## Team
 
-| Handle | Role |
-|--------|------|
-| [@xsaktian](https://x.com/xsaktian) | Product Manager |
-| [@EL3NG](https://x.com/EL3NG) | Builder |
+| Handle |  
+|--------|
+| [@EL3NG](https://x.com/EL3NG) |
+| [@0xZucho](https://x.com/0xZucho) |
+
 
 ---
 

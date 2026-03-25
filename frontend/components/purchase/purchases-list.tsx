@@ -155,8 +155,7 @@ function downloadRevealedAsset(asset: RevealedAsset) {
   link.remove();
 }
 
-type StatusFilter = "all" | "waiting" | "delivered" | "revoked";
-type LibraryTab = "assets" | "history";
+type LibraryTab = "inbox" | "purchases" | "sales" | "history";
 type LibraryToast = {
   title: string;
   message: string;
@@ -174,24 +173,36 @@ export function PurchasesList() {
   const [busyPurchaseId, setBusyPurchaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<LibraryToast | null>(null);
-  const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
-  const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
-  const [revealedAssets, setRevealedAssets] = useState<Record<string, RevealedAsset>>({});
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [activeTab, setActiveTab] = useState<LibraryTab>("assets");
+  const [activeTab, setActiveTab] = useState<LibraryTab>("inbox");
 
-  // Filter purchases by connected wallet only
+  const [revealedAssets, setRevealedAssets] = useState<Record<string, RevealedAsset>>({});
+  const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
+  const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
+
+  // Show purchases relevant to the connected wallet as buyer or seller
   const myPurchases = useMemo(
-    () => connectedWallet ? purchases.filter((p) => p.buyerWallet === connectedWallet) : [],
+    () => {
+      if (!connectedWallet) {
+        return [];
+      }
+
+      const relevantPurchases = purchases.filter((p) => p.buyerWallet === connectedWallet || p.sellerWallet === connectedWallet);
+      const uniquePurchases = new Map<string, LocalPurchaseIntent>();
+
+      relevantPurchases.forEach((purchase) => {
+        uniquePurchases.set(purchase.purchaseIdHex, purchase);
+      });
+
+      return [...uniquePurchases.values()];
+    },
     [purchases, connectedWallet]
   );
 
   const purchaseCards = useMemo(
-    () =>
-      myPurchases.map((purchase) => ({
-        purchase,
-        product: products.find((product) => product.productIdHex === purchase.productIdHex) ?? null
-      })),
+    () => myPurchases.map((purchase) => ({
+      purchase,
+      product: products.find((product) => product.productIdHex === purchase.productIdHex) ?? null
+    })),
     [products, myPurchases]
   );
   const hasPurchases = purchaseCards.length > 0;
@@ -690,24 +701,72 @@ export function PurchasesList() {
   }
 
   // Stats derived from purchaseCards
-  const totalSpentSol = purchaseCards.reduce((sum, { purchase }) => sum + Number(purchase.amountSol), 0);
+  const totalSpentSol = purchaseCards.reduce((sum, { purchase }) => {
+    if (purchase.buyerWallet !== connectedWallet) {
+      return sum;
+    }
+
+    return sum + Number(purchase.amountSol);
+  }, 0);
   const deliveredCount = purchaseCards.filter(({ purchase }) => {
     const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
     const status = resolveEffectivePurchaseStatus(onchain, purchase.status);
     return status === "delivered" || status === "delivered_arcium";
   }).length;
 
-  // Filtered purchase cards by status
-  const filteredCards = purchaseCards.filter(({ purchase }) => {
-    if (statusFilter === "all") return true;
+  const cardEntries = [...purchaseCards].map(({ purchase, product }) => {
     const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
-    const status = resolveEffectivePurchaseStatus(onchain, purchase.status);
-    if (statusFilter === "delivered") return status === "delivered" || status === "delivered_arcium";
-    if (statusFilter === "revoked") return status === "revoked";
-    if (statusFilter === "waiting") return status !== "delivered" && status !== "delivered_arcium" && status !== "revoked";
-    return true;
-  });
-  const historyCards = [...purchaseCards].sort((left, right) => Date.parse(right.purchase.createdAt) - Date.parse(left.purchase.createdAt));
+    const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);
+    const isPublishingWallet = Boolean(product?.sellerWallet && connectedWallet && product.sellerWallet === connectedWallet);
+    const isPurchaseWallet = Boolean(purchase.buyerWallet && connectedWallet && purchase.buyerWallet === connectedWallet);
+    const statusLabel = effectiveStatus === "prepared" ? "Prepared" : effectiveStatus === "revoked" ? "Revoked" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "Delivered" : effectiveStatus === "pending_arcium" ? "Queued" : "Waiting";
+    const statusBadgeVariant: "violet" | "red" | "amber" | "gray" | "cyan" = effectiveStatus === "revoked" ? "red" : effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium" ? "cyan" : effectiveStatus === "pending_arcium" ? "violet" : "amber";
+    const canReveal = isPurchaseWallet && (effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium");
+    const canFinalize = isPublishingWallet && effectiveStatus === "pending_seal";
+    const canRevoke = isPublishingWallet && effectiveStatus !== "revoked" && product?.policy.revocable;
+    const isBusy = busyPurchaseId === purchase.purchaseIdHex;
+    const normalizedCategory = normalizeMarketplaceCategory(product?.category ?? "other");
+    const revealedAsset = revealedAssets[purchase.purchaseIdHex];
+    const statusHint = effectiveStatus === "delivered" || effectiveStatus === "delivered_arcium"
+      ? isPurchaseWallet ? "Ready to reveal or download from your buyer wallet." : "Delivery has settled for this buyer."
+      : effectiveStatus === "pending_arcium"
+        ? "Arcium delivery has been queued and is waiting for callback settlement."
+        : effectiveStatus === "revoked"
+          ? "Access was revoked by the seller."
+          : isPublishingWallet
+            ? "Buyer has purchased this listing. Finalize delivery when ready."
+            : "Waiting for the seller to finalize delivery.";
+
+    return {
+      purchase,
+      product,
+      onchain,
+      effectiveStatus,
+      isPublishingWallet,
+      isPurchaseWallet,
+      statusLabel,
+      statusBadgeVariant,
+      canReveal,
+      canFinalize,
+      canRevoke,
+      isBusy,
+      normalizedCategory,
+      revealedAsset,
+      statusHint
+    };
+  }).sort((left, right) => Date.parse(right.purchase.createdAt) - Date.parse(left.purchase.createdAt));
+
+  const inboxSellerCards = cardEntries.filter((entry) => entry.isPublishingWallet && (entry.canFinalize || entry.effectiveStatus === "pending_arcium"));
+  const inboxBuyerCards = cardEntries.filter((entry) => entry.isPurchaseWallet && (entry.canReveal || Boolean(entry.revealedAsset)));
+  const purchaseViewCards = cardEntries.filter((entry) => entry.isPurchaseWallet);
+  const salesViewCards = cardEntries.filter((entry) => entry.isPublishingWallet);
+  const historyCards = cardEntries;
+  const inboxCount = inboxSellerCards.length + inboxBuyerCards.length;
+  const currentAssetCards = activeTab === "inbox"
+    ? [...inboxSellerCards, ...inboxBuyerCards]
+    : activeTab === "purchases"
+      ? purchaseViewCards
+      : salesViewCards;
 
   // ── Wallet guard ──────────────────────────────────────────
   if (!connectedWallet) {
@@ -743,10 +802,10 @@ export function PurchasesList() {
         </div>
 
         {/* ── Stats bar ────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[
             { label: "Total assets", value: <span>{purchaseCards.length}</span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> },
-            { label: "Total spent", value: <span className="inline-flex items-baseline gap-1.5"><span className="text-[24px] font-bold text-white">{totalSpentSol.toFixed(3)}</span><span className="text-[11px] font-bold text-purple-400">SOL</span></span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg> },
+            { label: "Total spent", value: <span className="inline-flex items-baseline gap-2"><span className="text-[24px] font-bold text-white">{totalSpentSol.toFixed(3)}</span><SolLogo size={16} /></span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg> },
             { label: "Delivered", value: <span>{deliveredCount}</span>, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.64-5.64"/></svg> }
           ].map(({ label, value, icon }) => (
             <div key={label} className="flex flex-col gap-4 rounded-2xl border border-[#1a1a2e] bg-gradient-to-br from-[#0b0b12] to-[#131320] p-5">
@@ -764,39 +823,25 @@ export function PurchasesList() {
       <div className="mt-2 flex flex-col gap-4 border-b border-[#1a1a2e] pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           {([
-            { id: "assets", label: "Assets" },
-            { id: "history", label: "History" }
-          ] as { id: LibraryTab; label: string }[]).map((tab) => (
+            { id: "inbox", label: "Inbox", count: inboxCount },
+            { id: "purchases", label: "Purchases", count: purchaseViewCards.length },
+            { id: "sales", label: "Sales", count: salesViewCards.length },
+            { id: "history", label: "History", count: historyCards.length }
+          ] as { id: LibraryTab; label: string; count: number }[]).map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={`rounded-lg px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider transition-all ${activeTab === tab.id ? "bg-purple-500/10 text-purple-400 border border-purple-500/30" : "bg-transparent text-[#5e5e73] hover:text-white"}`}
             >
-              {tab.label} {tab.id === "assets" ? `(${filteredCards.length})` : `(${historyCards.length})`}
+              {tab.label} ({tab.count})
             </button>
           ))}
         </div>
 
-        {activeTab === "assets" && (
-          <div className="flex flex-wrap gap-2">
-            {(["all", "waiting", "delivered", "revoked"] as StatusFilter[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setStatusFilter(f)}
-                className={`rounded-lg border px-4 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                  statusFilter === f
-                    ? "border-purple-500/50 bg-purple-500/10 text-purple-400"
-                    : "border-[#2e2e48] bg-transparent text-[#8b8b9d] hover:border-purple-500/30 hover:text-white"
-                }`}
-              >
-                {f}
-                {f === "all" ? ` (${purchaseCards.length})` : null}
-              </button>
-            ))}
-          </div>
-        )}
+        <p className="text-[12px] text-[#8b8b9d]">
+          {activeTab === "inbox" ? "Action-first view for pending deliveries and ready reveals." : activeTab === "purchases" ? "Everything you bought with this wallet." : activeTab === "sales" ? "Orders for listings published by this wallet." : "Full audit trail across buyer and seller roles."}
+        </p>
       </div>
 
       {/* ── Callouts ─────────────────────────────────────────── */}
@@ -808,20 +853,20 @@ export function PurchasesList() {
       ) : null}
 
       {/* ── Purchase list ─────────────────────────────────────── */}
-      {activeTab === "assets" ? (
+      {activeTab !== "history" ? (
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {filteredCards.length === 0 ? (
+        {currentAssetCards.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2e2e48] bg-[#0b0b12] p-16 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1a1a2e] text-[#5e5e73]">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             </div>
             <div>
-              <p className="text-[14px] font-bold text-white">{purchaseCards.length === 0 ? "No purchases yet" : "No items match this filter"}</p>
-              <p className="mt-1 max-w-sm text-[13px] text-[#8b8b9d]">{purchaseCards.length === 0 ? "Complete checkout from Explore to see items here." : "Try switching to a different filter."}</p>
+              <p className="text-[14px] font-bold text-white">{activeTab === "inbox" ? "Inbox is clear" : activeTab === "purchases" ? "No purchases yet" : "No sales yet"}</p>
+              <p className="mt-1 max-w-sm text-[13px] text-[#8b8b9d]">{activeTab === "inbox" ? "New actions will appear here when buyers need delivery or purchased items are ready to reveal." : activeTab === "purchases" ? "Complete checkout from Explore to see buyer assets here." : "Orders for listings published by this wallet will appear here."}</p>
             </div>
           </div>
         ) : (
-          filteredCards.map(({ purchase, product }) => {
+          currentAssetCards.map(({ purchase, product }) => {
             const onchain = onchainPurchaseStates[purchase.purchaseIdHex];
             const onchainProduct = product ? onchainProductStates[product.productIdHex] : undefined;
             const effectiveStatus = resolveEffectivePurchaseStatus(onchain, purchase.status);

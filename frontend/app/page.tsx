@@ -3,7 +3,7 @@ import { AppShell } from "@/components/marketplace/app-shell";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Arxcess — Encrypted Digital Goods on Solana",
+  title: "Arxcess | Encrypted Digital Goods on Solana",
   description: "Buy and sell encrypted digital products trustlessly on Solana. Files stay private until payment is finalized."
 };
 
@@ -41,7 +41,7 @@ export default function HomePage() {
                 {/* Description */}
                 <p className="max-w-[56ch] text-[15px] leading-relaxed text-[#8b8b9d]">
                   Sell any digital file. Buyers only decrypt after payment is confirmed on-chain.
-                  Zero trust required — access policies enforced entirely via Arcium on Solana.
+                  Zero trust required, with access policies enforced entirely via Arcium on Solana.
                 </p>
               </div>
 
@@ -63,7 +63,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Info panels — 3 columns on lg */}
+          {/* Info panels: 3 columns on lg */}
           <div className="grid gap-4 lg:grid-cols-3">
 
             {/* #0.1 Description */}
@@ -74,7 +74,7 @@ export default function HomePage() {
               </div>
               <div className="px-5 py-5">
                 <p className="text-[14px] leading-relaxed text-[#8b8b9d]">
-                  Arxcess is a pay-to-decrypt digital goods marketplace. Files are encrypted in your browser before upload. Decryption keys are held by Arcium in confidential shared state — released only after on-chain payment confirmation, with revocation and time-bound access enforcement.
+                  Arxcess is a pay-to-decrypt digital goods marketplace. Files are encrypted in your browser before upload. Decryption keys are held by Arcium in confidential shared state, then released only after on-chain payment confirmation, with revocation and time-bound access enforcement.
                 </p>
               </div>
             </div>
@@ -87,7 +87,7 @@ export default function HomePage() {
               </div>
               <ul className="flex flex-col gap-3 px-5 py-5">
                 {[
-                  "Creator uploads a file — encrypted in-browser before any transfer.",
+                  "Creator uploads a file, encrypted in-browser before any transfer.",
                   "Arcium takes custody of the encryption key in confidential state.",
                   "Buyer pays on Solana. Transaction confirmed on-chain immediately.",
                   "Seller queues Arcium delivery. Buyer reveals and downloads the file."
@@ -115,7 +115,7 @@ export default function HomePage() {
                 ].map(([title, desc]) => (
                   <li key={title} className="flex items-start gap-3 text-[14px] leading-relaxed text-[#8b8b9d]">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
-                    <span><strong className="font-semibold text-white">{title}</strong> — {desc}</span>
+                    <span><strong className="font-semibold text-white">{title}:</strong> {desc}</span>
                   </li>
                 ))}
               </ul>

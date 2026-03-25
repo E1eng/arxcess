@@ -12,7 +12,7 @@ export function AppShell({ children }: PropsWithChildren) {
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar — hidden on mobile, fixed on desktop */}
+        {/* Sidebar - hidden on mobile, fixed on desktop */}
         <div className="hidden md:flex md:w-[240px] md:shrink-0">
           <div className="fixed top-0 bottom-0 w-[240px] overflow-hidden bg-[#0b0b12]/80 backdrop-blur-md border-r border-[#1a1a2e]">
             <Sidebar />

@@ -622,8 +622,8 @@ export function SellerWorkbench() {
           <span className="text-[color:var(--text2)]">
             {result.activationRequired
               ? result.custodySettled
-                ? `${result.listing.title} — custody has settled on-chain and the listing is ready to activate.`
-                : `${result.listing.title} — custody was queued successfully and is waiting for the Arcium callback.`
+                ? `${result.listing.title}: custody has settled on-chain and the listing is ready to activate.`
+                : `${result.listing.title}: custody was queued successfully and is waiting for the Arcium callback.`
               : `${result.listing.title} is now live in Explore.`}
           </span>
           <div className="mt-3 overflow-hidden border border-[color:var(--border)]">

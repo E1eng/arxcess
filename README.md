@@ -1,10 +1,10 @@
 # Arxcess
 
-> **Private Data Transfer & Access Control — Encrypted digital goods marketplace built on Solana + Arcium.**
+> **Private Data Transfer & Access Control  -  Encrypted digital goods marketplace built on Solana + Arcium.**
 
 Apps need cryptographic access control without trusted servers. With Arcium, keys, policies, metering, and licensing are enforced in encrypted shared state over arbitrary storage (IPFS/S3), enabling revocation, pay-to-decrypt, and time-bound access.
 
-Arxcess brings this directly to digital commerce: sellers publish encrypted files to IPFS, Arcium's MXE confidential compute network takes custody of the content key, and buyers receive buyer-bound re-encrypted delivery payloads — all verifiable on Solana Devnet with zero server trust.
+Arxcess brings this directly to digital commerce: sellers publish encrypted files to IPFS, Arcium's MXE confidential compute network takes custody of the content key, and buyers receive buyer-bound re-encrypted delivery payloads  -  all verifiable on Solana Devnet with zero server trust.
 
 ---
 
@@ -36,8 +36,8 @@ Traditional digital marketplaces require buyers to trust the platform to deliver
 
 Arxcess eliminates that trust requirement:
 
-- **No trusted server for decryption.** The content key is never stored on any server. Arcium's MXE network — a network of confidential compute nodes — holds it under encrypted shared state.
-- **Buyer-bound delivery.** Arcium re-encrypts the content key specifically for the buyer's ephemeral delivery keypair, generated in-browser at checkout. The re-encrypted payload lives on-chain — no courier, no intermediary.
+- **No trusted server for decryption.** The content key is never stored on any server. Arcium's MXE network  -  a network of confidential compute nodes  -  holds it under encrypted shared state.
+- **Buyer-bound delivery.** Arcium re-encrypts the content key specifically for the buyer's ephemeral delivery keypair, generated in-browser at checkout. The re-encrypted payload lives on-chain  -  no courier, no intermediary.
 - **Policy enforcement in confidential compute.** Payment verification, product status, revocation status, and delivery finality are all evaluated inside the Arcium circuit before any key material is released.
 - **Verifiable on Solana.** Every custody and delivery event emits Anchor events and on-chain state transitions that anyone can inspect on Solana Explorer.
 
@@ -59,7 +59,7 @@ The core protocol separates encryption, custody, and delivery into distinct on-c
 | 8 | Arcium MXE | Evaluates all policy conditions (payment verified, product active, not revoked, not yet delivered), re-encrypts content key to buyer's delivery pubkey, fires `evaluate_and_seal_v4_callback` → writes ciphertext payload into `PurchaseState`, sets `arcium_delivery_ready = true` |
 | 9 | Buyer | Reads on-chain ciphertext payload, decrypts using delivery private key + Arcium MXE shared secret via Rescue cipher, recovers content key + IV, downloads and decrypts the IPFS ciphertext |
 
-**The seller never has access to the buyer's decrypted content. Arcium's MXE network performs the re-encryption inside a confidential compute environment — the result is cryptographically verifiable on-chain.**
+**The seller never has access to the buyer's decrypted content. Arcium's MXE network performs the re-encryption inside a confidential compute environment  -  the result is cryptographically verifiable on-chain.**
 
 ---
 
@@ -103,7 +103,7 @@ The core protocol separates encryption, custody, and delivery into distinct on-c
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Storage layer** — Ciphertext and metadata JSON are stored on Pinata/IPFS. Supabase (optional) holds listing metadata and purchase intents for cross-browser discoverability. `localStorage` is the fallback for single-browser use.
+**Storage layer**  -  Ciphertext and metadata JSON are stored on Pinata/IPFS. Supabase (optional) holds listing metadata and purchase intents for cross-browser discoverability. `localStorage` is the fallback for single-browser use.
 
 ---
 
@@ -169,7 +169,7 @@ arxcess/
 | Confidential compute | **Arcium MXE** (live on Devnet) |
 | Arcium client SDK | `@arcium-hq/client` (x25519, Rescue cipher, MXE pubkey fetch) |
 | Storage | Pinata/IPFS (ciphertext + metadata JSON) |
-| Client-side crypto | Web Crypto API — AES-GCM 256-bit |
+| Client-side crypto | Web Crypto API  -  AES-GCM 256-bit |
 | Delivery keypair | TweetNaCl x25519 key generation |
 | Shared state (optional) | Supabase (listings + purchase history) |
 
@@ -183,7 +183,7 @@ Arcium is the core privacy layer of Arxcess. It replaces the need for a trusted 
 
 Defined in [`encrypted-ixs/src/lib.rs`](encrypted-ixs/src/lib.rs):
 
-#### `deposit_key_v3` — Custody Wrap
+#### `deposit_key_v3`  -  Custody Wrap
 
 ```rust
 pub fn deposit_key_v3(input_ctxt: Enc<Shared, DeliveryMaterial>) -> Enc<Mxe, DeliveryMaterial>
@@ -193,7 +193,7 @@ pub fn deposit_key_v3(input_ctxt: Enc<Shared, DeliveryMaterial>) -> Enc<Mxe, Del
 - **Output:** Same material re-encrypted under MXE custody
 - **Effect:** Content key is now held exclusively in Arcium's encrypted shared state; the seller's one-time encryption key is discarded
 
-#### `evaluate_and_seal_v4` — Policy Check + Buyer Re-encryption
+#### `evaluate_and_seal_v4`  -  Policy Check + Buyer Re-encryption
 
 ```rust
 pub fn evaluate_and_seal_v4(
@@ -220,7 +220,7 @@ Located in [`frontend/lib/arcium/client.ts`](frontend/lib/arcium/client.ts):
 2. Packs content key + IV into 44-byte `DeliveryMaterial`
 3. Generates a one-time x25519 keypair, derives shared secret with MXE pubkey
 4. Encrypts material using Rescue cipher with a random 16-byte nonce
-5. Returns `sellerEncryptionPublicKey`, `encryptedKeyCiphertexts`, `encryptedKeyNonce` — passed to `request_deposit_product_key`
+5. Returns `sellerEncryptionPublicKey`, `encryptedKeyCiphertexts`, `encryptedKeyNonce`  -  passed to `request_deposit_product_key`
 
 **Reveal path (`revealArciumDeliveryMaterial`):**
 1. Reads `arcium_delivery_encryption_key`, `arcium_delivery_nonce`, `arcium_delivery_ciphertexts` from `PurchaseState`
@@ -248,7 +248,7 @@ Callbacks are called by the Arcium program after computation completes. They wri
 | Content key never exposed server-side | AES-GCM encryption happens in-browser; key is handed to Arcium MXE, never to a backend |
 | Seller cannot read buyer's delivery | Re-encryption is done by Arcium MXE, not the seller; seller only queues the computation |
 | Buyer delivery is bound to one keypair | MXE encrypts to buyer's x25519 public key recorded at purchase time; the payload is useless without the matching private key |
-| Policy enforced in confidential compute | Payment, status, revocation, and delivery flags are checked inside the Arcium circuit — not in client-side JavaScript or a server |
+| Policy enforced in confidential compute | Payment, status, revocation, and delivery flags are checked inside the Arcium circuit  -  not in client-side JavaScript or a server |
 | Delivery commitment verifiable on-chain | `delivery_commitment` is a SHA-256 hash over all delivery inputs; published on-chain and can be independently verified |
 | Revocation | Seller can call `revoke_purchase` on revocable listings; the circuit checks `purchase_not_revoked` before releasing key material |
 | Time-bound access | `expires_at` and `max_access_count` enforced in `consume_access` on-chain |
@@ -281,31 +281,31 @@ Source: [`contracts/programs/arxcess/src/`](contracts/programs/arxcess/src/)
 **`ProductState`** ([`state/product_state.rs`](contracts/programs/arxcess/src/state/product_state.rs))
 
 Stores listing metadata plus Arcium custody state:
-- `ciphertext_cid`, `ciphertext_hash` — IPFS location and integrity hash of the encrypted file
-- `arcium_vault_handle`, `key_commitment` — identifiers for MXE custody
-- `arcium_key_nonce`, `arcium_key_ciphertexts` — MXE-encrypted delivery material
-- `arcium_custody_ready` — set to `true` by the `deposit_key_v3` callback
-- `license_duration_seconds`, `max_access_count`, `revocable` — access policy
+- `ciphertext_cid`, `ciphertext_hash`  -  IPFS location and integrity hash of the encrypted file
+- `arcium_vault_handle`, `key_commitment`  -  identifiers for MXE custody
+- `arcium_key_nonce`, `arcium_key_ciphertexts`  -  MXE-encrypted delivery material
+- `arcium_custody_ready`  -  set to `true` by the `deposit_key_v3` callback
+- `license_duration_seconds`, `max_access_count`, `revocable`  -  access policy
 
 **`PurchaseState`** ([`state/purchase_state.rs`](contracts/programs/arxcess/src/state/purchase_state.rs))
 
 Stores purchase and delivery state:
-- `buyer_delivery_pubkey` — buyer's x25519 public key recorded at checkout
-- `sealed_key_box` — Arcium-encrypted delivery payload
-- `arcium_delivery_encryption_key`, `arcium_delivery_nonce`, `arcium_delivery_ciphertexts` — Arcium Rescue-cipher output
-- `delivery_commitment` — on-chain SHA-256 commitment over all delivery inputs
-- `arcium_delivery_ready` — set to `true` by the `evaluate_and_seal_v4` callback
-- `access_count`, `max_access_count`, `expires_at`, `revoked_at` — entitlement tracking
+- `buyer_delivery_pubkey`  -  buyer's x25519 public key recorded at checkout
+- `sealed_key_box`  -  Arcium-encrypted delivery payload
+- `arcium_delivery_encryption_key`, `arcium_delivery_nonce`, `arcium_delivery_ciphertexts`  -  Arcium Rescue-cipher output
+- `delivery_commitment`  -  on-chain SHA-256 commitment over all delivery inputs
+- `arcium_delivery_ready`  -  set to `true` by the `evaluate_and_seal_v4` callback
+- `access_count`, `max_access_count`, `expires_at`, `revoked_at`  -  entitlement tracking
 
 ---
 
 ## Frontend Surfaces
 
-### Home — [`frontend/app/page.tsx`](frontend/app/page.tsx)
+### Home  -  [`frontend/app/page.tsx`](frontend/app/page.tsx)
 
 Landing page. Introduces the encrypted marketplace concept, outlines the seller and buyer workflows, and links to Launch and Explore.
 
-### Explore — [`frontend/components/purchase/product-catalog.tsx`](frontend/components/purchase/product-catalog.tsx)
+### Explore  -  [`frontend/components/purchase/product-catalog.tsx`](frontend/components/purchase/product-catalog.tsx)
 
 Searchable, filterable storefront of active listings.
 
@@ -314,7 +314,7 @@ Searchable, filterable storefront of active listings.
 - Each card shows price, reveal limit, license duration, and revocability badge
 - **Checkout:** triggers `purchase_product` on-chain; buyer delivery keypair auto-generated in-browser and stored in `localStorage` keyed by purchase ID
 
-### Launch — [`frontend/components/upload/seller-workbench.tsx`](frontend/components/upload/seller-workbench.tsx)
+### Launch  -  [`frontend/components/upload/seller-workbench.tsx`](frontend/components/upload/seller-workbench.tsx)
 
 Step-by-step seller workspace for publishing encrypted listings.
 
@@ -322,16 +322,16 @@ Step-by-step seller workspace for publishing encrypted listings.
 2. Select file → AES-GCM encrypted in-browser via Web Crypto API
 3. Ciphertext + metadata JSON uploaded to Pinata/IPFS
 4. Three sequential wallet transactions:
-   - `create_product` — registers product on-chain
-   - `request_deposit_product_key` — queues Arcium MXE custody; passes Rescue-encrypted content key
-   - `activate_product` — activates listing after custody settles
+   - `create_product`  -  registers product on-chain
+   - `request_deposit_product_key`  -  queues Arcium MXE custody; passes Rescue-encrypted content key
+   - `activate_product`  -  activates listing after custody settles
 5. Listing synced to Supabase and/or `localStorage`
 
-### Library — [`frontend/components/purchase/purchases-list.tsx`](frontend/components/purchase/purchases-list.tsx)
+### Library  -  [`frontend/components/purchase/purchases-list.tsx`](frontend/components/purchase/purchases-list.tsx)
 
 Wallet-gated hub showing all purchases associated with the connected wallet.
 
-**Assets tab** — active purchases with delivery state:
+**Assets tab**  -  active purchases with delivery state:
 
 | Action | Shown To | Condition |
 |--------|----------|-----------|
@@ -342,7 +342,7 @@ Wallet-gated hub showing all purchases associated with the connected wallet.
 
 Each card shows: delivery status, reveal count (`used/max`), price, purchase date, expiry, and expandable transaction trail (Purchase tx, Publish tx, Delivery tx).
 
-**History tab** — full chronological purchase history with expandable per-entry transaction details.
+**History tab**  -  full chronological purchase history with expandable per-entry transaction details.
 
 ---
 
@@ -352,7 +352,7 @@ Each card shows: delivery status, reveal count (`used/max`), price, purchase dat
 
 - **Node.js 20+**, npm 10+
 - A Solana wallet extension (e.g. [Phantom](https://phantom.app/)) set to **Devnet**
-- Devnet SOL — get some from the [Solana faucet](https://faucet.solana.com/)
+- Devnet SOL  -  get some from the [Solana faucet](https://faucet.solana.com/)
 - A [Pinata](https://pinata.cloud/) account for IPFS uploads (free tier works)
 - (Optional) A [Supabase](https://supabase.com/) project for cross-browser listing/purchase sync
 
@@ -395,7 +395,7 @@ npm run test:arcium   # Run Arcium circuit tests on devnet
 
 ## Environment Variables
 
-Create `frontend/.env.local` — **never commit this file**:
+Create `frontend/.env.local`  -  **never commit this file**:
 
 ```env
 # Solana
@@ -409,7 +409,7 @@ NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET=456
 # Pinata (required for Launch uploads)
 PINATA_JWT=<your_pinata_jwt>
 
-# Supabase (optional — enables shared listing and purchase history)
+# Supabase (optional  -  enables shared listing and purchase history)
 NEXT_PUBLIC_SUPABASE_URL=<your_supabase_project_url>
 SUPABASE_SERVICE_ROLE_KEY=<your_supabase_service_role_key>
 ```
@@ -419,7 +419,7 @@ SUPABASE_SERVICE_ROLE_KEY=<your_supabase_service_role_key>
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Yes | Solana JSON-RPC endpoint |
 | `NEXT_PUBLIC_PROGRAM_ID` | Yes | On-chain Arxcess program address |
 | `NEXT_PUBLIC_TREASURY_WALLET` | Yes | Protocol fee destination |
-| `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` | Yes | Arcium devnet cluster offset (456) — required for publish and delivery finalization |
+| `NEXT_PUBLIC_ARCIUM_CLUSTER_OFFSET` | Yes | Arcium devnet cluster offset (456)  -  required for publish and delivery finalization |
 | `PINATA_JWT` | For Launch | Authenticated Pinata uploads (ciphertext + metadata) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Optional | Enables cross-browser listing and purchase sync |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional | Server-side Supabase writes via API routes |
@@ -495,8 +495,8 @@ A passing run is cryptographic proof that Arcium performed real confidential com
 | In-browser encryption | `window.crypto.subtle` AES-GCM 256-bit; content key is never sent to any server |
 | Arcium MXE custody | Content key + IV packed into 44-byte `DeliveryMaterial`, encrypted to MXE x25519 pubkey using Rescue cipher over ECDH shared secret; MXE holds it under encrypted shared state |
 | Buyer-bound re-encryption | Arcium circuit re-encrypts delivery material exclusively to the buyer's x25519 public key recorded at `purchase_product` time |
-| On-chain delivery commitment | `delivery_commitment` is SHA-256 over `(product_id, purchase_id, buyer_pubkey, buyer_delivery_pubkey, approval_flag, sealed_key_box)` — written on-chain and verifiable by anyone |
-| Policy enforcement | Payment, product status, revocation, and delivery finality evaluated inside the Arcium circuit — not in JavaScript or a server |
+| On-chain delivery commitment | `delivery_commitment` is SHA-256 over `(product_id, purchase_id, buyer_pubkey, buyer_delivery_pubkey, approval_flag, sealed_key_box)`  -  written on-chain and verifiable by anyone |
+| Policy enforcement | Payment, product status, revocation, and delivery finality evaluated inside the Arcium circuit  -  not in JavaScript or a server |
 | Revocation | Seller can call `revoke_purchase` on revocable listings; future `evaluate_and_seal` calls will output a zero payload |
 | Time-bound access | `expires_at` enforced in `consume_access`; `max_access_count` limits total reveals |
 | Supabase stores no secrets | Supabase holds only listing metadata and purchase intents (no content keys, no ciphertext); guarded by service role key in server-side API routes |
@@ -508,7 +508,7 @@ A passing run is cryptographic proof that Arcium performed real confidential com
 ```
 1.  Configure frontend/.env.local
 2.  npm run dev  →  http://localhost:3000
-3.  Connect Phantom (Devnet mode) — get Devnet SOL from faucet
+3.  Connect Phantom (Devnet mode)  -  get Devnet SOL from faucet
 4.  Open Launch (Wallet A / seller):
       - Fill metadata, select a file, click Publish
       - Approve 3 wallet transactions: create_product, request_deposit_product_key, activate_product
@@ -524,7 +524,7 @@ A passing run is cryptographic proof that Arcium performed real confidential com
       - Find the asset, click Reveal → Download
 ```
 
-Run `npm run typecheck` before every push — zero TypeScript errors required.
+Run `npm run typecheck` before every push  -  zero TypeScript errors required.
 
 ---
 
@@ -534,16 +534,16 @@ This project was built as a submission for the **Private Data Transfer & Access 
 
 ### Requirements Checklist
 
-- [x] **Functional Solana project integrated with Arcium** — Program deployed on Devnet at `sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk`; Arcium circuits live on Devnet (cluster offset 456); full publish + delivery flow executed via real MXE nodes
-- [x] **Clear explanation of how Arcium is used and the privacy benefits it provides** — See [Arcium Integration](#arcium-integration) above
-- [x] **Open-source GitHub repository** — This repository
-- [x] **Submission in English** — All documentation and UI in English
+- [x] **Functional Solana project integrated with Arcium**  -  Program deployed on Devnet at `sDNRRyCwQptaRZHATCha4nSJCFCwpcDWH2NvJCCAwFk`; Arcium circuits live on Devnet (cluster offset 456); full publish + delivery flow executed via real MXE nodes
+- [x] **Clear explanation of how Arcium is used and the privacy benefits it provides**  -  See [Arcium Integration](#arcium-integration) above
+- [x] **Open-source GitHub repository**  -  This repository
+- [x] **Submission in English**  -  All documentation and UI in English
 
 ### Judging Criteria Alignment
 
 | Criterion | Implementation |
 |-----------|---------------|
-| **Innovation** | Trustless pay-to-decrypt marketplace — buyers receive content keys re-encrypted by Arcium MXE, eliminating server-side trust entirely |
+| **Innovation** | Trustless pay-to-decrypt marketplace  -  buyers receive content keys re-encrypted by Arcium MXE, eliminating server-side trust entirely |
 | **Technical Implementation** | End-to-end Arcium integration with custom circuit logic, Anchor callbacks, x25519/Rescue cipher key transport, and on-chain commitment verification |
 | **User Experience** | Single-flow marketplace: seller publishes in 3 clicks, buyer purchases in 1 click, delivery and reveal handled from the Library |
 | **Impact** | Applicable to digital goods, research data, media licensing, and any scenario requiring cryptographic access control without a trusted key server |

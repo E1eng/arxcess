@@ -793,7 +793,7 @@ export function PurchasesList() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-widest text-[#5e5e73]">Library</p>
-            <h1 className="mt-1 font-head text-[28px] font-bold tracking-tight text-white sm:text-[32px]">Assets and history in one place.</h1>
+            <h1 className="mt-1 font-head text-[28px] font-bold tracking-tight text-white sm:text-[32px]">Track your assets and history here.</h1>
             <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-[#8b8b9d]">See assets that are ready to access, open purchase history, and review transaction trails without stacking too much detail on screen.</p>
           </div>
           <div className="flex items-center gap-3">

@@ -29,19 +29,19 @@ const metadataBase = process.env.NEXT_PUBLIC_APP_URL
 
 export const metadata: Metadata = {
   title: {
-    default: "Arxcess — Encrypted Digital Goods on Solana",
+    default: "Arxcess | Encrypted Digital Goods on Solana",
     template: "%s | Arxcess"
   },
   metadataBase,
   description: "Buy and sell encrypted digital products trustlessly on Solana. Files stay private until payment is finalized.",
   openGraph: {
-    title: "Arxcess — Encrypted Marketplace",
+    title: "Arxcess | Encrypted Marketplace",
     description: "The encrypted digital goods marketplace on Solana.",
     images: ["/og-image.png"]
   },
   twitter: {
     card: "summary_large_image",
-    title: "Arxcess — Encrypted Marketplace",
+    title: "Arxcess | Encrypted Marketplace",
     description: "Buy and sell encrypted digital products trustlessly on Solana.",
     images: ["/og-image.png"]
   }

@@ -162,6 +162,12 @@ type LibraryToast = {
   variant: "info" | "success";
 };
 
+type ActiveRevealModal = {
+  purchaseIdHex: string;
+  title: string;
+  asset: RevealedAsset;
+};
+
 export function PurchasesList() {
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet();
@@ -176,6 +182,7 @@ export function PurchasesList() {
   const [activeTab, setActiveTab] = useState<LibraryTab>("inbox");
 
   const [revealedAssets, setRevealedAssets] = useState<Record<string, RevealedAsset>>({});
+  const [activeRevealModal, setActiveRevealModal] = useState<ActiveRevealModal | null>(null);
   const [onchainPurchaseStates, setOnchainPurchaseStates] = useState<Record<string, DecodedPurchaseState>>({});
   const [onchainProductStates, setOnchainProductStates] = useState<Record<string, DecodedProductState>>({});
 
@@ -280,6 +287,14 @@ export function PurchasesList() {
 
   function showStatus(title: string, message: string, variant: LibraryToast["variant"] = "info") {
     setStatusToast({ title, message, variant });
+  }
+
+  function openRevealModal(purchaseIdHex: string, title: string, asset: RevealedAsset) {
+    setActiveRevealModal({ purchaseIdHex, title, asset });
+  }
+
+  function closeRevealModal() {
+    setActiveRevealModal(null);
   }
 
   function resolveEffectivePurchaseStatus(onchain: DecodedPurchaseState | undefined, purchaseStatus: string) {
@@ -663,12 +678,17 @@ export function PurchasesList() {
           }
         };
       });
+      openRevealModal(purchaseIdHex, product.title, {
+        downloadName,
+        mimeType: product.mimeType,
+        objectUrl
+      });
       await persistPurchase({
         ...purchase,
         accessCount: purchase.accessCount + 1
       });
       refreshPurchases();
-      showStatus("Reveal", "Asset decrypted successfully. Preview is ready below.", "success");
+      showStatus("Reveal", "Asset decrypted successfully. Preview is ready.", "success");
       return;
     } catch (cause) {
       setStatusToast(null);
@@ -937,7 +957,7 @@ export function PurchasesList() {
                           </button>
                         ) : null}
                         {canReveal ? (
-                          <button type="button" onClick={() => void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 px-4 py-2 text-[12px] font-bold text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-all hover:scale-[1.02] disabled:opacity-50">
+                          <button type="button" onClick={() => revealedAsset ? openRevealModal(purchase.purchaseIdHex, product?.title ?? "Revealed asset", revealedAsset) : void revealPurchase(purchase.purchaseIdHex)} disabled={isBusy} className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 px-4 py-2 text-[12px] font-bold text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-all hover:scale-[1.02] disabled:opacity-50">
                             {isBusy ? "Revealing..." : revealedAsset ? "Reveal again" : "Reveal"}
                           </button>
                         ) : null}
@@ -984,31 +1004,6 @@ export function PurchasesList() {
                     </details>
                   </div>
                 </div>
-
-                {/* Revealed Asset Preview */}
-                {revealedAsset ? (
-                  <div className="border-t border-[#1a1a2e] bg-black">
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Revealed Preview</span>
-                      <button onClick={() => downloadRevealedAsset(revealedAsset)} className="text-[12px] font-bold text-white hover:text-purple-400 transition-colors">
-                        Download ↓
-                      </button>
-                    </div>
-                    {revealedAsset.mimeType.startsWith("image/") ? (
-                      <div className="relative h-[240px] w-full border-t border-[#1a1a2e]">
-                        <Image src={revealedAsset.objectUrl} alt={product?.title ?? "Revealed asset"} fill unoptimized className="object-contain p-2" />
-                      </div>
-                    ) : revealedAsset.mimeType.startsWith("video/") ? (
-                      <div className="border-t border-[#1a1a2e] p-2">
-                        <video src={revealedAsset.objectUrl} controls className="h-full w-full rounded-lg bg-black" />
-                      </div>
-                    ) : (
-                      <div className="border-t border-[#1a1a2e] p-4 text-center text-[12px] text-[#8b8b9d]">
-                        Preview unavailable. Please download the file.
-                      </div>
-                    )}
-                  </div>
-                ) : null}
 
               </div>
             );
@@ -1075,6 +1070,43 @@ export function PurchasesList() {
           )}
         </div>
       )}
+
+      {activeRevealModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#2e2e48] bg-[#0b0b12] shadow-[0_20px_80px_rgba(0,0,0,0.55)]">
+            <div className="flex items-center justify-between border-b border-[#1a1a2e] px-5 py-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Revealed Preview</p>
+                <h3 className="mt-1 text-[16px] font-bold text-white">{activeRevealModal.title}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => downloadRevealedAsset(activeRevealModal.asset)} className="rounded-lg border border-[#2e2e48] px-3 py-2 text-[12px] font-bold text-white transition-colors hover:border-purple-500/40 hover:text-purple-400">
+                  Download
+                </button>
+                <button type="button" onClick={closeRevealModal} className="rounded-lg border border-[#2e2e48] px-3 py-2 text-[12px] font-bold text-[#8b8b9d] transition-colors hover:border-white/20 hover:text-white">
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="min-h-[320px] flex-1 overflow-auto bg-black p-4">
+              {activeRevealModal.asset.mimeType.startsWith("image/") ? (
+                <div className="relative mx-auto h-[70vh] min-h-[320px] max-h-[720px] w-full">
+                  <Image src={activeRevealModal.asset.objectUrl} alt={activeRevealModal.title} fill unoptimized className="object-contain" />
+                </div>
+              ) : activeRevealModal.asset.mimeType.startsWith("video/") ? (
+                <video src={activeRevealModal.asset.objectUrl} controls className="mx-auto h-auto max-h-[70vh] w-full rounded-xl bg-black" />
+              ) : (
+                <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-4 text-center">
+                  <p className="text-[13px] text-[#8b8b9d]">Preview is unavailable for this file type.</p>
+                  <button type="button" onClick={() => downloadRevealedAsset(activeRevealModal.asset)} className="rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 px-4 py-2 text-[12px] font-bold text-white">
+                    Download file
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <NoticeToast message={error} open={Boolean(error)} onClose={() => setError(null)} />
       <NoticeToast message={statusToast?.message ?? null} title={statusToast?.title} variant={statusToast?.variant ?? "info"} open={Boolean(statusToast)} onClose={() => setStatusToast(null)} />

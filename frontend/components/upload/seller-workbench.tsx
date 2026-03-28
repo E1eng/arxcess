@@ -92,6 +92,7 @@ export function SellerWorkbench() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<LaunchResult | null>(null);
+  const [dismissedResultProductId, setDismissedResultProductId] = useState<string | null>(null);
   const sellerWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
   const isArciumPublishBlocked = !isArciumFrontendRuntimeReady();
   const selectedAssetLabel = file ? `${file.name} · ${formatBytes(file.size)}` : "Choose the asset you want to lock behind payment.";
@@ -188,6 +189,7 @@ export function SellerWorkbench() {
   useEffect(() => {
     if (!sellerWallet) {
       setResult(null);
+      setDismissedResultProductId(null);
       return;
     }
 
@@ -201,6 +203,10 @@ export function SellerWorkbench() {
       .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
 
     if (!latestListing?.publishSignature) {
+      return;
+    }
+
+    if (dismissedResultProductId === latestListing.productIdHex) {
       return;
     }
 
@@ -240,7 +246,7 @@ export function SellerWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [buildResultState, connection, products, result?.listing.sellerWallet, sellerWallet]);
+  }, [buildResultState, connection, dismissedResultProductId, products, result?.listing.sellerWallet, sellerWallet]);
 
   const handleActivateResultListing = useCallback(async () => {
     if (!result) {
@@ -401,6 +407,7 @@ export function SellerWorkbench() {
 
     setBusy(true);
     setError(null);
+    setDismissedResultProductId(null);
     setResult(null);
     setStatusMessage("Encrypting the asset in your browser...");
 
@@ -572,6 +579,7 @@ export function SellerWorkbench() {
         custodySettled: true
       }));
 
+      setDismissedResultProductId(null);
       setForm(initialForm);
       setFile(null);
     } catch (cause) {
@@ -618,7 +626,19 @@ export function SellerWorkbench() {
 
       {result ? (
         <div className="callout callout--success">
-          <strong>Published!</strong>
+          <div className="flex items-start justify-between gap-3">
+            <strong>Published!</strong>
+            <button
+              type="button"
+              onClick={() => {
+                setDismissedResultProductId(result.listing.productIdHex);
+                setResult(null);
+              }}
+              className="rounded-md border border-[color:var(--border)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--text2)] transition-colors hover:border-white/20 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
           <span className="text-[color:var(--text2)]">
             {result.activationRequired
               ? result.custodySettled
